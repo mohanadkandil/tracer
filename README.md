@@ -11,23 +11,30 @@ corporate documents. Three sources combined:
 
 Default sweet-spot run produces ~5K labeled examples, split 80/10/10 train/val/test.
 
-## Quickstart
+## Quickstart (uv)
 
+Install [uv](https://github.com/astral-sh/uv) if you don't have it:
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env  # paste OPENROUTER_API_KEY
+brew install uv          # or: curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Bootstrap and run:
+```bash
+uv sync                  # creates .venv, installs deps from pyproject.toml + uv.lock
+cp .env.example .env     # paste OPENROUTER_API_KEY
 ```
 
 Offline smoke (no API calls, ~3s):
 ```bash
-python -m data_gen.pipeline --no-llm --filled 50 --blanks 10 --negatives-local 10 \
-  --paraphrase 0 --negatives-llm 0 --out data/smoke
+uv run python -m data_gen.pipeline --no-llm \
+  --filled 50 --blanks 10 --negatives-local 10 \
+  --paraphrase 0 --negatives-llm 0 \
+  --out data/smoke
 ```
 
 Full sweet-spot run (~5K examples, ~$5 on OpenRouter, ~15min):
 ```bash
-python -m data_gen.pipeline --out data/out \
+uv run python -m data_gen.pipeline --out data/out \
   --filled 2500 --blanks 500 \
   --paraphrase 1500 \
   --negatives-local 300 --negatives-llm 700 \
