@@ -1,7 +1,10 @@
 """Fine-tune GLiNER on Bosch synthetic PII data.
 
+Uses the high-level `model.train_model(...)` API which is stable across gliner versions
+and abstracts away DataCollator / Dataset wiring.
+
 Usage:
-  # local CPU/MPS smoke (small)
+  # local CPU/MPS smoke
   uv run --group train python -m train.finetune \
       --train data/gliner/train.jsonl --val data/gliner/val.jsonl \
       --out models/gliner-bosch --epochs 1 --batch-size 4 --max-steps 50
@@ -72,40 +75,18 @@ def main() -> None:
     p.add_argument("--lr-others", type=float, default=1e-5)
     p.add_argument("--max-steps", type=int, default=0, help="0 = no cap (run full epochs)")
     p.add_argument("--save-steps", type=int, default=500)
-    p.add_argument("--max-types", type=int, default=25)
     p.add_argument("--warmup-ratio", type=float, default=0.1)
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
+
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "true")
 
     # Deferred imports — heavy deps only loaded when actually training.
     import gliner as _gliner
     import torch
     from gliner import GLiNER
-    from gliner.training import Trainer, TrainingArguments
 
     print(f"[gliner] version={getattr(_gliner, '__version__', '?')}")
-
-    # Collator: name + signature differ across versions
-    try:
-        from gliner.data_processing.collator import DataCollator as _DC
-    except ImportError:
-        from gliner.data_processing.collator import DataCollatorWithPadding as _DC
-
-    # Dataset wrapper exists in some versions only; Trainer can also accept raw list
-    GLiNERDataset = None
-    for modpath in (
-        "gliner.data_processing",
-        "gliner.data_processing.dataset",
-        "gliner.dataset",
-    ):
-        try:
-            mod = __import__(modpath, fromlist=["GLiNERDataset"])
-            GLiNERDataset = getattr(mod, "GLiNERDataset", None)
-            if GLiNERDataset is not None:
-                print(f"[gliner] using {modpath}.GLiNERDataset")
-                break
-        except ImportError:
-            continue
 
     device = _pick_device()
     print(f"[device] {device}")
@@ -116,20 +97,14 @@ def main() -> None:
 
     print(f"[model] loading base: {args.base_model}")
     model = GLiNER.from_pretrained(args.base_model)
-    model = model.to(device)
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Wrap if available; else pass raw lists (Trainer handles it).
-    if GLiNERDataset is not None:
-        train_dataset = GLiNERDataset(train_data, model.config, data_processor=model.data_processor)
-        val_dataset = GLiNERDataset(val_data, model.config, data_processor=model.data_processor)
-    else:
-        train_dataset = train_data
-        val_dataset = val_data
-
-    training_args = TrainingArguments(
+    # train_model API kwargs are stable across versions. We pass extras only when supported.
+    train_kwargs = dict(
+        train_dataset=train_data,
+        eval_dataset=val_data,
         output_dir=str(out_dir),
         learning_rate=args.lr,
         weight_decay=0.01,
@@ -140,38 +115,42 @@ def main() -> None:
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         num_train_epochs=args.epochs,
-        max_steps=args.max_steps if args.max_steps > 0 else -1,
-        eval_strategy="epoch",
-        save_strategy="steps",
         save_steps=args.save_steps,
         save_total_limit=2,
         dataloader_num_workers=0,
         use_cpu=(device == "cpu"),
-        bf16=(device == "cuda"),
         report_to="none",
         seed=args.seed,
     )
-
-    # Collator constructor signature varies — try modern kwargs first, fall back to legacy
-    try:
-        data_collator = _DC(model.config, data_processor=model.data_processor, prepare_labels=True)
-    except TypeError:
-        data_collator = _DC(model.config)
-
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,
-        tokenizer=model.data_processor.transformer_tokenizer,
-        data_collator=data_collator,
-    )
+    if args.max_steps > 0:
+        train_kwargs["max_steps"] = args.max_steps
+    if device == "cuda":
+        train_kwargs["bf16"] = True
 
     print(f"[train] starting — epochs={args.epochs} batch={args.batch_size}")
-    trainer.train()
+    try:
+        model.train_model(**train_kwargs)
+    except TypeError as e:
+        # Older gliner versions may reject some kwargs — strip and retry.
+        print(f"[warn] train_model rejected some kwargs: {e}\n[warn] retrying with minimal set")
+        minimal = dict(
+            train_dataset=train_data,
+            eval_dataset=val_data,
+            output_dir=str(out_dir),
+            learning_rate=args.lr,
+            per_device_train_batch_size=args.batch_size,
+            per_device_eval_batch_size=args.batch_size,
+            num_train_epochs=args.epochs,
+            save_steps=args.save_steps,
+            save_total_limit=2,
+            use_cpu=(device == "cpu"),
+            report_to="none",
+        )
+        model.train_model(**minimal)
 
+    # `train_model` saves automatically, but save again to be safe.
     print(f"[save] {out_dir}")
-    trainer.save_model(str(out_dir))
+    model.save_pretrained(str(out_dir))
 
     meta = {
         "base_model": args.base_model,
