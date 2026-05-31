@@ -35,7 +35,7 @@ export default function LiveScanPage() {
       const data = JSON.parse((e as MessageEvent).data) as ProgressEvent;
       setProgress(data);
       setTicker((t) =>
-        [{ path: data.current, spans: data.spans ?? 0, cached: !!data.cached, owner: data.owner }, ...t].slice(0, 25),
+        [{ path: data.current, spans: data.spans ?? 0, cached: !!data.cached, owner: data.owner }, ...t].slice(0, 30),
       );
     });
     es.addEventListener("done", (e) => {
@@ -55,9 +55,7 @@ export default function LiveScanPage() {
     setRunning(false);
   }
 
-  useEffect(() => {
-    return () => esRef.current?.close();
-  }, []);
+  useEffect(() => () => esRef.current?.close(), []);
 
   const totalScanned = progress?.scanned ?? done?.scanned ?? 0;
   const totalDeduped = progress?.deduped ?? done?.deduped ?? 0;
@@ -68,117 +66,136 @@ export default function LiveScanPage() {
   return (
     <div>
       <PageHeader
-        title="Live Scan"
-        subtitle="Discovery → dedup → tiered routing → mosaic linking. Streamed via SSE."
+        kicker="Live Scan · 02"
+        title="Discovery Stream"
+        subtitle="Discovery → dedup → tiered routing → mosaic linking. Streamed via Server-Sent Events."
         action={
           <div className="flex items-center gap-2">
-            <div className="flex items-center bg-[var(--bg-card)] border border-[var(--border)] rounded-lg overflow-hidden">
+            <div className="flex items-center bg-[var(--paper-card)] border border-[var(--rule)] rounded-md overflow-hidden">
               <button
                 disabled={running}
                 onClick={() => setSource("sharepoint")}
-                className={`px-3 py-2 text-xs flex items-center gap-1.5 ${
-                  source === "sharepoint" ? "bg-[var(--bg-elev)] text-[var(--fg)]" : "text-[var(--fg-dim)]"
+                className={`px-3 py-2 text-[11px] flex items-center gap-1.5 font-mono tracking-wide ${
+                  source === "sharepoint" ? "bg-[var(--paper-elev)] text-[var(--ink)]" : "text-[var(--ink-dim)]"
                 }`}
               >
-                <Cloud size={13} /> SharePoint
+                <Cloud size={11} /> SHAREPOINT
               </button>
               <button
                 disabled={running}
                 onClick={() => setSource("filesystem")}
-                className={`px-3 py-2 text-xs flex items-center gap-1.5 ${
-                  source === "filesystem" ? "bg-[var(--bg-elev)] text-[var(--fg)]" : "text-[var(--fg-dim)]"
+                className={`px-3 py-2 text-[11px] flex items-center gap-1.5 font-mono tracking-wide ${
+                  source === "filesystem" ? "bg-[var(--paper-elev)] text-[var(--ink)]" : "text-[var(--ink-dim)]"
                 }`}
               >
-                <HardDrive size={13} /> Filesystem
+                <HardDrive size={11} /> FILESYSTEM
               </button>
             </div>
             {running ? (
               <button className="btn" onClick={stop}>
-                <Square size={14} /> Stop
+                <Square size={13} /> Stop
               </button>
             ) : (
               <button className="btn btn-primary" onClick={start}>
-                <Play size={14} /> Start scan
+                <Play size={13} /> Start scan
               </button>
             )}
           </div>
         }
       />
 
-      <div className="px-8 grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        <Stat label="Scanned" value={totalScanned} mono />
-        <Stat label="Deduped (cache)" value={totalDeduped} mono accent="good" />
-        <Stat label="Findings" value={totalFindings} mono accent="warn" />
-        <Stat label="Elapsed" value={`${elapsed}s`} mono />
-        <Stat label="Rate" value={`${rate}/s`} mono accent="good" />
-      </div>
-
-      <div className="px-8 grid grid-cols-1 lg:grid-cols-2 gap-4 mb-12">
-        <div className="card p-5">
-          <h3 className="text-sm font-semibold mb-4 text-[var(--fg-dim)] uppercase tracking-widest">
-            Now scanning
-          </h3>
-          {!progress && !done && (
-            <p className="text-[var(--fg-dim)] text-sm">
-              Idle. Click <span className="text-[var(--fg)]">Start scan</span> to walk{" "}
-              <span className="kbd">data/files/</span>.
-            </p>
-          )}
-          {progress && (
-            <div>
-              <div className="text-sm code text-[var(--fg)] break-all">{progress.current}</div>
-              {progress.owner && (
-                <div className="text-xs text-[var(--fg-dim)] mt-1">owner: {progress.owner}</div>
-              )}
-              <div className="mt-3 h-1.5 rounded-full bg-[var(--bg-elev)] overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)] transition-all duration-300"
-                  style={{ width: `${Math.min(100, totalScanned / 5)}%` }}
-                />
-              </div>
-            </div>
-          )}
-          {done && (
-            <div className="mt-2 text-sm text-[var(--good)]">
-              ✓ Done. {done.scanned} files in {(done.elapsed_ms! / 1000).toFixed(1)}s.
-            </div>
-          )}
+      <div className="px-10 py-8">
+        {/* Stat strip */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-10 border-y border-[var(--rule)] py-6">
+          <Stat label="Scanned" value={totalScanned} />
+          <Stat label="Deduped" value={totalDeduped} tone="sage" hint="cache hits" />
+          <Stat label="Findings" value={totalFindings} tone="amber" />
+          <Stat label="Elapsed" value={`${elapsed}s`} />
+          <Stat label="Rate" value={`${rate}/s`} tone="citrine" />
         </div>
 
-        <div className="card p-5">
-          <h3 className="text-sm font-semibold mb-4 text-[var(--fg-dim)] uppercase tracking-widest">
-            Recent files
-          </h3>
-          <div className="flex flex-col gap-1.5 max-h-80 overflow-y-auto">
-            {ticker.length === 0 && <p className="text-[var(--fg-dim)] text-sm">Waiting...</p>}
-            {ticker.map((row, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    row.cached ? "bg-[var(--fg-dim)]" : row.spans > 0 ? "bg-[var(--warn)]" : "bg-[var(--good)]"
-                  }`}
-                />
-                <span className="code text-[var(--fg)] flex-1 truncate">{row.path}</span>
-                {row.cached ? (
-                  <span className="kbd">cache</span>
-                ) : (
-                  <span className="text-[var(--fg-dim)] font-mono">{row.spans}</span>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 mb-12">
+          <section className="lg:col-span-2">
+            <div className="kicker mb-3">Currently</div>
+            {!progress && !done && (
+              <p className="text-[13px] text-[var(--ink-dim)]">
+                Idle. Press <span className="kbd">Start scan</span> to walk <span className="code">data/files/</span>.
+              </p>
+            )}
+            {progress && (
+              <div className="flex flex-col gap-3">
+                <div className="font-display text-[22px] text-[var(--ink)] break-all leading-snug">
+                  {progress.current.split("/").slice(-2).join("/")}
+                </div>
+                {progress.owner && (
+                  <div className="kicker text-[var(--ink-dim)]">
+                    owner · <span className="code text-[var(--ink)] normal-case tracking-normal">{progress.owner}</span>
+                  </div>
                 )}
+                <div className="mt-2 h-[2px] bg-[var(--paper-card)] overflow-hidden">
+                  <div
+                    className="h-full bg-[var(--citrine)] transition-all duration-300"
+                    style={{ width: `${Math.min(100, totalScanned / 5)}%` }}
+                  />
+                </div>
+                <div className="kicker text-[var(--ink-fade)] mt-1">
+                  step {totalScanned.toString().padStart(4, "0")}
+                </div>
               </div>
-            ))}
-          </div>
+            )}
+            {done && !progress?.scanned && (
+              <div className="mt-2 text-[13px] text-[var(--sage)] flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[var(--sage)]" />
+                Done. {done.scanned} files · {(done.elapsed_ms! / 1000).toFixed(1)}s.
+              </div>
+            )}
+          </section>
+
+          <section className="lg:col-span-3 border-l border-[var(--rule)] pl-8">
+            <div className="kicker mb-3">Ticker</div>
+            <div className="flex flex-col max-h-[64vh] overflow-y-auto">
+              {ticker.length === 0 && <p className="text-[12px] text-[var(--ink-dim)]">Waiting...</p>}
+              {ticker.map((row, i) => (
+                <div
+                  key={i}
+                  className={`flex items-center gap-3 py-1.5 text-[12px] data-in ${
+                    i < ticker.length - 1 ? "border-b border-[var(--rule)]" : ""
+                  }`}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{
+                      background: row.cached
+                        ? "var(--ink-fade)"
+                        : row.spans > 0
+                          ? "var(--amber)"
+                          : "var(--sage)",
+                    }}
+                  />
+                  <span className="code text-[var(--ink)] flex-1 truncate">{row.path}</span>
+                  {row.owner && <span className="font-mono text-[10px] text-[var(--ink-fade)] truncate max-w-[140px]">{row.owner}</span>}
+                  {row.cached ? (
+                    <span className="kbd">cache</span>
+                  ) : (
+                    <span className="text-[var(--ink-dim)] font-mono text-[11px]">{row.spans}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       </div>
     </div>
   );
 }
 
-function Stat({ label, value, mono, accent }: { label: string; value: string | number; mono?: boolean; accent?: "good" | "warn" }) {
-  const color = accent === "good" ? "text-[var(--good)]" : accent === "warn" ? "text-[var(--warn)]" : "text-[var(--fg)]";
+function Stat({ label, value, tone, hint }: { label: string; value: string | number; tone?: "sage" | "amber" | "citrine"; hint?: string }) {
+  const color = tone === "sage" ? "text-[var(--sage)]" : tone === "amber" ? "text-[var(--amber)]" : tone === "citrine" ? "text-[var(--citrine)]" : "text-[var(--ink)]";
   return (
-    <div className="card p-4">
-      <div className="text-[10px] uppercase tracking-widest text-[var(--fg-dim)] mb-2">{label}</div>
-      <div className={`text-xl ${mono ? "font-mono" : "font-semibold"} ${color}`}>{value}</div>
+    <div>
+      <div className="meta mb-2">{label}</div>
+      <div className={`font-mono text-[28px] leading-none ${color}`}>{value}</div>
+      {hint && <div className="text-[10px] text-[var(--ink-fade)] mt-1 tracking-wide uppercase">{hint}</div>}
     </div>
   );
 }

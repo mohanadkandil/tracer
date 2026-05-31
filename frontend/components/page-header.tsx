@@ -1,9 +1,22 @@
-export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
+export function PageHeader({
+  kicker,
+  title,
+  subtitle,
+  action,
+}: {
+  kicker?: string;
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+}) {
   return (
-    <header className="px-8 pt-8 pb-6 flex items-end justify-between">
+    <header className="px-10 pt-10 pb-8 flex items-end justify-between border-b border-[var(--rule)]">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {subtitle && <p className="text-sm text-[var(--fg-dim)] mt-1">{subtitle}</p>}
+        {kicker && <div className="kicker mb-3">{kicker}</div>}
+        <h1 className="display-lg text-[var(--ink)]">{title}</h1>
+        {subtitle && (
+          <p className="text-[13.5px] text-[var(--ink-dim)] mt-3 max-w-2xl leading-relaxed">{subtitle}</p>
+        )}
       </div>
       {action}
     </header>

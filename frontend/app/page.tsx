@@ -24,122 +24,158 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title="Compliance Dashboard"
-        subtitle="Bosch • SharePoint / OneDrive / FileShares • Local-first scan results"
+        kicker="Overview · 01"
+        title="Compliance Dossier"
+        subtitle="Bosch · SharePoint, OneDrive, FileShares. Local-first scan results, tiered detection, mosaic-linked identities."
       />
 
-      {err && (
-        <div className="mx-8 mb-4 card p-4 text-[var(--bad)] text-sm">
-          {err}
-          <div className="text-[var(--fg-dim)] text-xs mt-1">Is the API running at http://localhost:8000?</div>
-        </div>
-      )}
-
-      <div className="px-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KpiCard icon={Files} label="Files with findings" value={filesScanned} accent="default" />
-        <KpiCard icon={FileSearch} label="Total findings" value={totalFindings} accent="default" />
-        <KpiCard icon={ShieldAlert} label="High+critical" value={critical} accent={critical > 0 ? "bad" : "good"} />
-        <KpiCard icon={Cpu} label="Detectors active" value={detectorEntries.length || 0} accent="default" />
-      </div>
-
-      <div className="px-8 grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-        <div className="card p-5 lg:col-span-2">
-          <h3 className="text-sm font-semibold mb-4 text-[var(--fg-dim)] uppercase tracking-widest">
-            By Label
-          </h3>
-          {labelEntries.length === 0 && (
-            <p className="text-[var(--fg-dim)] text-sm">
-              No findings yet. Start a scan from the <span className="text-[var(--fg)]">Live Scan</span> tab.
-            </p>
-          )}
-          <div className="flex flex-col gap-3">
-            {labelEntries.map(([label, count]) => {
-              const max = labelEntries[0]?.[1] || 1;
-              const pct = (count / max) * 100;
-              return (
-                <div key={label} className="flex items-center gap-3">
-                  <div className="w-32 text-xs text-[var(--fg-dim)] font-medium">{label}</div>
-                  <div className="flex-1 h-2 rounded-full bg-[var(--bg-elev)] overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--accent-2)]"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="w-12 text-right text-sm font-mono">{count}</div>
-                </div>
-              );
-            })}
+      <div className="px-10 py-8">
+        {err && (
+          <div className="mb-8 border-l-4 border-[var(--oxblood)] bg-[var(--paper-card)] p-4 text-[13px]">
+            <div className="kicker mb-1 text-[var(--oxblood)]">Backend unreachable</div>
+            <div className="text-[var(--ink)] code">{err}</div>
+            <div className="text-[var(--ink-dim)] text-[11px] mt-1">
+              Is the API running at <span className="kbd">localhost:8000</span>?
+            </div>
           </div>
+        )}
+
+        {/* KPI strip */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+          <KpiCard icon={Files} label="Files Scanned" value={filesScanned} />
+          <KpiCard icon={FileSearch} label="Total Findings" value={totalFindings} />
+          <KpiCard
+            icon={ShieldAlert}
+            label="High + Critical"
+            value={critical}
+            accent={critical > 0 ? "bad" : "good"}
+            emphasis={critical > 0}
+          />
+          <KpiCard icon={Cpu} label="Detectors Active" value={detectorEntries.length || 0} />
         </div>
 
-        <div className="card p-5">
-          <h3 className="text-sm font-semibold mb-4 text-[var(--fg-dim)] uppercase tracking-widest">
-            Severity
-          </h3>
-          {(["critical", "high", "medium", "low"] as const).map((sev) => {
-            const c = summary?.by_severity[sev] ?? 0;
-            return (
-              <div key={sev} className="flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0">
-                <span className={`pill pill-${sev}`}>{sev}</span>
-                <span className="font-mono">{c}</span>
+        {/* Editorial 2-col */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+          <section className="lg:col-span-2">
+            <SectionHeader kicker="03" title="Detection by Label" caption="distribution across all scanned documents" />
+            {labelEntries.length === 0 ? (
+              <p className="text-[13px] text-[var(--ink-dim)]">
+                No findings yet. Start a scan from the <span className="text-[var(--ink)]">Live Scan</span> tab.
+              </p>
+            ) : (
+              <div className="flex flex-col">
+                {labelEntries.map(([label, count], idx) => {
+                  const max = labelEntries[0]?.[1] || 1;
+                  const pct = (count / max) * 100;
+                  return (
+                    <div
+                      key={label}
+                      className={`flex items-center gap-4 py-3 ${idx > 0 ? "border-t border-[var(--rule)]" : ""}`}
+                    >
+                      <div className="font-mono text-[10.5px] text-[var(--ink-fade)] w-8">
+                        {String(idx + 1).padStart(2, "0")}
+                      </div>
+                      <div className="w-40 text-[12.5px] text-[var(--ink)]">{label}</div>
+                      <div className="flex-1 h-[3px] bg-[var(--paper-card)] overflow-hidden">
+                        <div className="h-full bg-[var(--citrine)]" style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="w-14 text-right font-mono text-[14px] text-[var(--ink)]">{count}</div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            )}
+          </section>
+
+          <section>
+            <SectionHeader kicker="04" title="Severity" caption="risk profile" />
+            <div className="flex flex-col">
+              {(["critical", "high", "medium", "low"] as const).map((sev, idx) => {
+                const c = summary?.by_severity[sev] ?? 0;
+                return (
+                  <div
+                    key={sev}
+                    className={`flex items-center justify-between py-3 ${idx > 0 ? "border-t border-[var(--rule)]" : ""}`}
+                  >
+                    <span className={`pill pill-${sev}`}>{sev}</span>
+                    <span className="font-mono text-[15px]">{c}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+
+        {/* Owners + detector mix */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+          <section>
+            <SectionHeader kicker="05" title="Top Exposed Owners" caption="who holds the most PII" />
+            {topOwners.length === 0 ? (
+              <p className="text-[13px] text-[var(--ink-dim)]">No data yet.</p>
+            ) : (
+              <ul className="flex flex-col">
+                {topOwners.slice(0, 8).map((o, idx) => (
+                  <li
+                    key={o.owner}
+                    className={`flex items-center justify-between py-2.5 text-[13px] ${
+                      idx > 0 ? "border-t border-[var(--rule)]" : ""
+                    }`}
+                  >
+                    <span className="code text-[var(--ink)]">{o.owner}</span>
+                    <span className="font-mono text-[var(--ink-dim)] text-[12px]">
+                      {o.count} <span className="text-[10px] tracking-wider uppercase text-[var(--ink-fade)] ml-1">findings</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section>
+            <SectionHeader kicker="06" title="Detector Mix" caption="tiered routing — cost-aware escalation" />
+            {detectorEntries.length === 0 ? (
+              <p className="text-[13px] text-[var(--ink-dim)]">No data yet.</p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {detectorEntries.map(([d, c]) => {
+                  const total = detectorEntries.reduce((s, [, n]) => s + n, 0) || 1;
+                  const pct = (c / total) * 100;
+                  const tier = d === "presidio" ? "T1" : d === "gliner" ? "T2" : "T3";
+                  const color = d === "presidio" ? "var(--sage)" : d === "gliner" ? "var(--citrine)" : "var(--amber)";
+                  return (
+                    <div key={d}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[13px] flex items-center gap-2.5">
+                          <span className="kbd">{tier}</span>
+                          <span className="font-mono">{d}</span>
+                        </span>
+                        <span className="font-mono text-[11px] text-[var(--ink-dim)]">
+                          {pct.toFixed(0)}% · {c}
+                        </span>
+                      </div>
+                      <div className="h-[2px] bg-[var(--paper-card)] overflow-hidden">
+                        <div className="h-full" style={{ width: `${pct}%`, background: color }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="px-8 grid grid-cols-1 lg:grid-cols-2 gap-4 mb-12">
-        <div className="card p-5">
-          <h3 className="text-sm font-semibold mb-4 text-[var(--fg-dim)] uppercase tracking-widest">
-            Top Exposed Owners
-          </h3>
-          {topOwners.length === 0 && <p className="text-[var(--fg-dim)] text-sm">No data yet</p>}
-          <ul className="flex flex-col gap-2">
-            {topOwners.slice(0, 8).map((o) => (
-              <li key={o.owner} className="flex items-center justify-between text-sm">
-                <span className="text-[var(--fg)]">{o.owner}</span>
-                <span className="font-mono text-[var(--fg-dim)]">{o.count} findings</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="card p-5">
-          <h3 className="text-sm font-semibold mb-4 text-[var(--fg-dim)] uppercase tracking-widest">
-            Detector Mix (Tiered Routing)
-          </h3>
-          {detectorEntries.length === 0 && <p className="text-[var(--fg-dim)] text-sm">No data yet</p>}
-          <div className="flex flex-col gap-3">
-            {detectorEntries.map(([d, c]) => {
-              const total = detectorEntries.reduce((s, [, n]) => s + n, 0) || 1;
-              const pct = (c / total) * 100;
-              const tier = d === "presidio" ? "T1" : d === "gliner" ? "T2" : "T3";
-              return (
-                <div key={d}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm">
-                      <span className="kbd mr-2">{tier}</span>
-                      {d}
-                    </span>
-                    <span className="text-xs text-[var(--fg-dim)] font-mono">
-                      {pct.toFixed(0)}% • {c} spans
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-[var(--bg-elev)] overflow-hidden">
-                    <div
-                      className="h-full"
-                      style={{
-                        width: `${pct}%`,
-                        background: d === "presidio" ? "var(--good)" : d === "gliner" ? "var(--accent)" : "var(--warn)",
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+function SectionHeader({ kicker, title, caption }: { kicker: string; title: string; caption?: string }) {
+  return (
+    <div className="mb-5">
+      <div className="flex items-baseline gap-3 mb-1">
+        <span className="font-mono text-[10.5px] tracking-widest text-[var(--ink-fade)]">§{kicker}</span>
+        <h3 className="font-display text-[20px] text-[var(--ink)] leading-tight">{title}</h3>
       </div>
+      {caption && <div className="text-[11px] text-[var(--ink-fade)] mt-0.5">{caption}</div>}
     </div>
   );
 }
