@@ -81,7 +81,11 @@ def main() -> None:
     import torch
     from gliner import GLiNER
     from gliner.training import Trainer, TrainingArguments
-    from gliner.data_processing.collator import DataCollatorWithPadding
+    from gliner.data_processing import GLiNERDataset
+    try:
+        from gliner.data_processing.collator import DataCollator
+    except ImportError:  # back-compat with older gliner versions
+        from gliner.data_processing.collator import DataCollatorWithPadding as DataCollator
 
     device = _pick_device()
     print(f"[device] {device}")
@@ -96,6 +100,10 @@ def main() -> None:
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Wrap raw dicts in GLiNERDataset (model.config + data_processor handle tokenization at batch time)
+    train_dataset = GLiNERDataset(train_data, model.config, data_processor=model.data_processor)
+    val_dataset = GLiNERDataset(val_data, model.config, data_processor=model.data_processor)
 
     training_args = TrainingArguments(
         output_dir=str(out_dir),
@@ -120,13 +128,13 @@ def main() -> None:
         seed=args.seed,
     )
 
-    data_collator = DataCollatorWithPadding(model.config)
+    data_collator = DataCollator(model.config, data_processor=model.data_processor, prepare_labels=True)
 
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_data,
-        eval_dataset=val_data,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
         tokenizer=model.data_processor.transformer_tokenizer,
         data_collator=data_collator,
     )
