@@ -17,7 +17,7 @@ export default function FindingsPage() {
 
   return (
     <div>
-      <PageHeader title="Findings" subtitle="Every PII span persisted across all scans." />
+      <PageHeader kicker="Findings · 06" title="Findings Ledger" subtitle="Every PII span persisted across all scans." />
 
       <div className="px-8 mb-4 flex items-center gap-3">
         <input

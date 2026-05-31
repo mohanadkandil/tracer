@@ -20,6 +20,7 @@ export default function AgentsPage() {
   return (
     <div>
       <PageHeader
+        kicker="Agents · 07"
         title="Agent Registry"
         subtitle="Each capability is a versioned, endorsable artifact. Platform, not script."
       />

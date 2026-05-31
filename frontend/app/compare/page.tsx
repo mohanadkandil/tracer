@@ -39,8 +39,9 @@ export default function ComparePage() {
   return (
     <div>
       <PageHeader
+        kicker="Showdown · 03"
         title="Model Showdown"
-        subtitle="Run each tier against the same input. Side-by-side detection + latency + cost."
+        subtitle="Run each tier against the same input. Side-by-side detection, latency, and cost projection."
         action={
           <button className="btn btn-primary" onClick={run} disabled={loading}>
             <Beaker size={14} /> {loading ? "Running..." : "Compare"}

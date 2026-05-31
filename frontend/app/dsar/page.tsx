@@ -58,11 +58,12 @@ export default function DSARPage() {
   return (
     <div>
       <PageHeader
-        title="DSAR Copilot"
+        kicker="DSAR · 05"
+        title="Erasure Copilot"
         subtitle="Article 17 right-to-erasure workflow. Paste the request, the agent finds every file, proposes actions, generates the compliance certificate."
       />
 
-      <div className="px-8 grid grid-cols-1 lg:grid-cols-5 gap-4 mb-12">
+      <div className="px-10 py-8 grid grid-cols-1 lg:grid-cols-5 gap-6 mb-12">
         <div className="lg:col-span-2 flex flex-col gap-4">
           <div className="card p-5">
             <h3 className="text-xs uppercase tracking-widest text-[var(--fg-dim)] mb-3">Erasure request</h3>
