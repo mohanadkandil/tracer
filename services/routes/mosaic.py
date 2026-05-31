@@ -1,15 +1,11 @@
-"""Mosaic API — entity identity lookup + force-directed graph + risk score.
-
-Powers the "Privacy Mosaic" demo: paste a name, see every file that mentions
-them, every identifier they're linked to, fuzzy-matched aliases, and a re-id
-risk score with cited reasons.
-"""
+"""Mosaic API — entity identity lookup + force-directed graph + risk score + suggestions."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from ..pipeline.mosaic import build_graph, canonical_person, lookup_person
+from ..db import get_conn
+from ..pipeline.mosaic import build_graph, canonical_person, lookup_person, _is_false_person
 
 router = APIRouter(prefix="/mosaic")
 
@@ -46,7 +42,33 @@ def get_graph(limit_people: int = 50) -> dict:
 
 @router.get("/canonical")
 def canonical(name: str) -> dict:
-    """Debug helper: show how a name canonicalizes. Useful when judges ask
-    "what if I write the name differently?".
-    """
+    """Show how a name canonicalizes."""
     return {"input": name, "canonical": canonical_person(name)}
+
+
+@router.get("/suggestions")
+def suggestions(limit: int = 8) -> list[dict]:
+    """Return real PERSON names found in scans — useful for demo / search auto-fill.
+
+    Filters out false positives (German form labels, single-word labels) so the
+    list is high-quality.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT value, COUNT(DISTINCT file_id) AS docs "
+            "FROM entity_links WHERE label = 'PERSON' "
+            "GROUP BY value ORDER BY docs DESC LIMIT ?",
+            (limit * 4,),  # over-fetch since we filter
+        ).fetchall()
+    out: list[dict] = []
+    for r in rows:
+        if _is_false_person(r["value"]):
+            continue
+        # Sanity: must look like a multi-word name (FirstName LastName style)
+        parts = r["value"].split()
+        if len(parts) < 2:
+            continue
+        out.append({"name": r["value"], "docs": r["docs"]})
+        if len(out) >= limit:
+            break
+    return out

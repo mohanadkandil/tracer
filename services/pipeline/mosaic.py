@@ -36,6 +36,44 @@ from ..schemas import Span
 
 log = logging.getLogger("pipeline.mosaic")
 
+# Stoplist of common German / English corporate form labels that GLiNER zero-shot
+# often misclassifies as PERSON. If a "PERSON" span normalizes to one of these,
+# treat it as a false positive and skip it everywhere (links, graph, lookup).
+_PERSON_STOPWORDS = {
+    # German form labels
+    "pflege", "begründung", "begrundung", "genehmigung", "zugriff", "zugriffsebene",
+    "abteilung", "vorgesetzter", "datum", "unterschrift", "kommentare", "antrag",
+    "antragsteller", "ausgefüllt", "prüfung", "entscheidung", "system", "user",
+    "mitarbeiter", "name", "kategorie", "betrag", "beschreibung", "kurs", "ergebnis",
+    "status", "dozent", "teilnehmer", "vorfallsmeldung", "spesenabrechnung",
+    "lieferantenanlage", "schulungsbewertung", "review", "approval", "approver",
+    "comments", "purpose", "manager", "department", "summary", "engineering",
+    "der antragsteller", "der genehmiger", "eng", "data", "data zugriffsebene",
+    "data handling", "code", "passed", "failed", "approved", "rejected", "genehmigt",
+    "abgelehnt", "bedingt", "owner", "deadline", "frist", "verantwortlich",
+    "instructor", "participant", "course", "score",
+}
+
+def _is_false_person(value: str) -> bool:
+    """Reject a PERSON span if it looks like a form label, single word noun,
+    or pure punctuation. Conservative — we accept first-last names readily.
+    """
+    v = value.strip()
+    if len(v) < 4:
+        return True
+    norm = v.lower().strip("., :;-")
+    if norm in _PERSON_STOPWORDS:
+        return True
+    parts = norm.split()
+    # Reject any single-word "name" that contains common label words
+    if len(parts) == 1 and parts[0] in _PERSON_STOPWORDS:
+        return True
+    # Reject "Word: " patterns where colon survived span extraction
+    if ":" in v[:8]:
+        return True
+    return False
+
+
 # Labels we treat as person identifiers (linkable to a canonical person)
 PERSON_LABELS = {"PERSON"}
 ID_LABELS = {"EMPLOYEE_ID", "EMAIL", "PHONE", "USERNAME", "SIGNATURE"}
@@ -142,7 +180,7 @@ def link_findings_for_doc(
     if not spans:
         return 0
 
-    people: list[Span] = [s for s in spans if s.label in PERSON_LABELS]
+    people: list[Span] = [s for s in spans if s.label in PERSON_LABELS and not _is_false_person(s.value)]
     ids: list[Span] = [s for s in spans if s.label in ID_LABELS]
 
     # If nothing linkable, skip
@@ -428,6 +466,9 @@ def build_graph(limit_people: int = 50) -> dict:
     edges: list[dict] = []
     for r in rows:
         canon = r["canonical"]
+        # Filter junk PERSON values that were stored before the filter existed
+        if r["label"] == "PERSON" and _is_false_person(r["value"]):
+            continue
         if canon not in nodes_index:
             nodes_index[canon] = {
                 "id": canon,
@@ -437,6 +478,7 @@ def build_graph(limit_people: int = 50) -> dict:
             }
         nodes_index[canon]["docs"] += 1
         if r["co_canonical"] and r["co_canonical"] != canon:
+            # Skip edges whose other end was a junk PERSON
             edges.append({
                 "source": r["co_canonical"],
                 "target": canon,

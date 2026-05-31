@@ -151,6 +151,9 @@ export const api = {
   graph: (limitPeople = 50) =>
     http<MosaicGraph>(`/mosaic/graph?limit_people=${limitPeople}`),
 
+  suggestions: (limit = 8) =>
+    http<{ name: string; docs: number }[]>(`/mosaic/suggestions?limit=${limit}`),
+
   dsarPlan: (subject: string, article: "17" | "5" | "32" = "17") =>
     http<DSARPlan>("/dsar/plan", {
       method: "POST",

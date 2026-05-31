@@ -30,13 +30,27 @@ export default function MosaicPage() {
   const [query, setQuery] = useState("");
   const [person, setPerson] = useState<PersonIdentity | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<{ name: string; docs: number }[]>([]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fgRef = useRef<any>(null);
   const [dims, setDims] = useState({ w: 800, h: 560 });
 
   useEffect(() => {
     api.graph().then(setGraph).catch((e) => setErr(String(e)));
+    api.suggestions(6).then(setSuggestions).catch(() => {});
   }, []);
+
+  async function pick(name: string) {
+    setQuery(name);
+    setPerson(null);
+    setErr(null);
+    try {
+      const r = await api.person(name);
+      setPerson(r);
+    } catch (e) {
+      setErr(String(e));
+    }
+  }
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -110,6 +124,21 @@ export default function MosaicPage() {
             />
           </div>
           <button className="btn btn-primary" onClick={lookup}>Look up</button>
+
+          {suggestions.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="kicker text-[var(--ink-fade)]">Try:</span>
+              {suggestions.slice(0, 5).map((s) => (
+                <button
+                  key={s.name}
+                  onClick={() => pick(s.name)}
+                  className="kbd hover:border-[var(--rule-strong)] hover:text-[var(--ink)] transition-colors"
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Legend */}
           <div className="ml-auto flex items-center gap-3 flex-wrap">
