@@ -78,14 +78,34 @@ def main() -> None:
     args = p.parse_args()
 
     # Deferred imports — heavy deps only loaded when actually training.
+    import gliner as _gliner
     import torch
     from gliner import GLiNER
     from gliner.training import Trainer, TrainingArguments
-    from gliner.data_processing import GLiNERDataset
+
+    print(f"[gliner] version={getattr(_gliner, '__version__', '?')}")
+
+    # Collator: name + signature differ across versions
     try:
-        from gliner.data_processing.collator import DataCollator
-    except ImportError:  # back-compat with older gliner versions
-        from gliner.data_processing.collator import DataCollatorWithPadding as DataCollator
+        from gliner.data_processing.collator import DataCollator as _DC
+    except ImportError:
+        from gliner.data_processing.collator import DataCollatorWithPadding as _DC
+
+    # Dataset wrapper exists in some versions only; Trainer can also accept raw list
+    GLiNERDataset = None
+    for modpath in (
+        "gliner.data_processing",
+        "gliner.data_processing.dataset",
+        "gliner.dataset",
+    ):
+        try:
+            mod = __import__(modpath, fromlist=["GLiNERDataset"])
+            GLiNERDataset = getattr(mod, "GLiNERDataset", None)
+            if GLiNERDataset is not None:
+                print(f"[gliner] using {modpath}.GLiNERDataset")
+                break
+        except ImportError:
+            continue
 
     device = _pick_device()
     print(f"[device] {device}")
@@ -101,9 +121,13 @@ def main() -> None:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Wrap raw dicts in GLiNERDataset (model.config + data_processor handle tokenization at batch time)
-    train_dataset = GLiNERDataset(train_data, model.config, data_processor=model.data_processor)
-    val_dataset = GLiNERDataset(val_data, model.config, data_processor=model.data_processor)
+    # Wrap if available; else pass raw lists (Trainer handles it).
+    if GLiNERDataset is not None:
+        train_dataset = GLiNERDataset(train_data, model.config, data_processor=model.data_processor)
+        val_dataset = GLiNERDataset(val_data, model.config, data_processor=model.data_processor)
+    else:
+        train_dataset = train_data
+        val_dataset = val_data
 
     training_args = TrainingArguments(
         output_dir=str(out_dir),
@@ -128,7 +152,11 @@ def main() -> None:
         seed=args.seed,
     )
 
-    data_collator = DataCollator(model.config, data_processor=model.data_processor, prepare_labels=True)
+    # Collator constructor signature varies — try modern kwargs first, fall back to legacy
+    try:
+        data_collator = _DC(model.config, data_processor=model.data_processor, prepare_labels=True)
+    except TypeError:
+        data_collator = _DC(model.config)
 
     trainer = Trainer(
         model=model,
