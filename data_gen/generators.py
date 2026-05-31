@@ -24,6 +24,53 @@ def _seed_all(seed: int) -> None:
     random.seed(seed)
 
 
+# ---------- BOSCH employee roster ----------
+# Closed set of identities that recur across documents. This is what makes the
+# mosaic graph light up: same Hans Müller appears in 14 docs across HR, Finance,
+# IT — exactly the cross-document re-identification pattern we pitch.
+
+# (name, employee_id, email, dept_de, dept_en)
+ROSTER: list[tuple[str, str, str, str, str]] = [
+    ("Hans Müller",       "E-43217", "hans.mueller@bosch.example",      "Entwicklung",            "Engineering"),
+    ("Anna Becker",       "E-22184", "anna.becker@bosch.example",       "Finanzen",               "Finance"),
+    ("Tobias Wagner",     "E-91054", "tobias.wagner@bosch.example",     "Compliance & Risiko",    "Compliance & Risk"),
+    ("Elena Fischer",     "E-31706", "elena.fischer@bosch.example",     "Digitale Betriebsführung", "Digital Operations"),
+    ("Jonas Keller",      "E-50488", "jonas.keller@bosch.example",      "Einkauf",                "Procurement Ops"),
+    ("Miriam Braun",      "E-67739", "miriam.braun@bosch.example",      "Recht",                  "Legal"),
+    ("Philipp Neumann",   "E-12055", "philipp.neumann@bosch.example",   "Projektmanagement",      "Project Management"),
+    ("Sara Hoffmann",     "E-20491", "sara.hoffmann@bosch.example",     "Projektmanagement",      "Project Management"),
+    ("David Schmid",      "E-31705", "david.schmid@bosch.example",      "Entwicklung",            "Engineering"),
+    ("Laura König",       "E-44820", "laura.koenig@bosch.example",      "Qualitätssicherung",     "Quality Assurance"),
+    ("Klaus Hartmann",    "E-58371", "klaus.hartmann@bosch.example",    "Produktion",             "Manufacturing"),
+    ("Ute Schäfer",       "E-66192", "ute.schaefer@bosch.example",      "Personalabteilung",      "Human Resources"),
+    ("Stefan Bauer",      "E-77831", "stefan.bauer@bosch.example",      "Lieferkette",            "Supply Chain"),
+    ("Katja Meyer",       "E-83014", "katja.meyer@bosch.example",       "IT-Service",             "IT Service Desk"),
+    ("Andreas Lorenz",    "E-19527", "andreas.lorenz@bosch.example",    "Identity & Access",      "Identity & Access"),
+    ("Monika Vogel",      "E-25683", "monika.vogel@bosch.example",      "Forschung & Entwicklung", "Research & Development"),
+    ("Wolfgang Krause",   "E-37118", "wolfgang.krause@bosch.example",   "Recht",                  "Legal"),
+    ("Ingrid Berger",     "E-49265", "ingrid.berger@bosch.example",     "Finanzen",               "Finance"),
+    ("Matthias Hoffmann", "E-54072", "matthias.hoffmann@bosch.example", "Entwicklung",            "Engineering"),
+    ("Claudia Roth",      "E-68943", "claudia.roth@bosch.example",      "Compliance & Risiko",    "Compliance & Risk"),
+]
+
+
+def pick_employee(lang: Lang) -> dict:
+    """Sample one identity from the roster. Returns dict shaped for generators."""
+    name, emp_id, email, dept_de, dept_en = random.choice(ROSTER)
+    return {
+        "name": name,
+        "emp_id": emp_id,
+        "email": email,
+        "dept": dept_de if lang == "de" else dept_en,
+    }
+
+
+def pick_manager(employee_name: str) -> str:
+    """Pick a manager who is not the employee themselves."""
+    candidates = [r[0] for r in ROSTER if r[0] != employee_name]
+    return random.choice(candidates)
+
+
 # ---------- domain pools (closed-set) ----------
 
 DEPARTMENTS_EN = [
@@ -150,11 +197,12 @@ def _username(name: str) -> str:
 def gen_expense(lang: Lang) -> Example:
     fake = FAKERS[lang]
     b = TextBuilder()
-    name = fake.name()
-    emp_id = _employee_id()
-    mgr = fake.name()
+    emp = pick_employee(lang)
+    name = emp["name"]
+    emp_id = emp["emp_id"]
+    mgr = pick_manager(name)
     sig = _signature_from_name(mgr)
-    dept = random.choice(DEPARTMENTS_DE if lang == "de" else DEPARTMENTS_EN)
+    dept = emp["dept"]
     cat = random.choice(EXPENSE_CATEGORIES_DE if lang == "de" else EXPENSE_CATEGORIES_EN)
     date1 = _date(fake, lang)
     date2 = _date(fake, lang)
@@ -198,16 +246,17 @@ def gen_expense(lang: Lang) -> Example:
 def gen_it_access(lang: Lang) -> Example:
     fake = FAKERS[lang]
     b = TextBuilder()
-    name = fake.name()
+    emp = pick_employee(lang)
+    name = emp["name"]
     user = _username(name)
-    mgr = fake.name()
+    mgr = pick_manager(name)
     sig = _signature_from_name(mgr)
-    dept = random.choice(DEPARTMENTS_DE if lang == "de" else DEPARTMENTS_EN)
+    dept = emp["dept"]
     system = random.choice(SYSTEMS)
     level = random.choice(ACCESS_LEVELS_DE if lang == "de" else ACCESS_LEVELS_EN)
     decision = random.choice(DECISIONS_DE if lang == "de" else DECISIONS_EN)
     date = _date(fake, lang)
-    email = fake.company_email()
+    email = emp["email"]
 
     if lang == "de":
         b.add("IT-Systemzugriffsantrag (ausgefüllt)\n")
@@ -250,10 +299,11 @@ def gen_it_access(lang: Lang) -> Example:
 def gen_incident(lang: Lang) -> Example:
     fake = FAKERS[lang]
     b = TextBuilder()
-    reporter = fake.name()
-    owner = fake.name()
+    reporter_emp = pick_employee(lang)
+    reporter = reporter_emp["name"]
+    owner = pick_manager(reporter)
     sig = _signature_from_name(owner)
-    dept = random.choice(DEPARTMENTS_DE if lang == "de" else DEPARTMENTS_EN)
+    dept = reporter_emp["dept"]
     itype = random.choice(INCIDENT_TYPES_DE if lang == "de" else INCIDENT_TYPES_EN)
     date1 = _date(fake, lang)
     date2 = _date(fake, lang)
@@ -298,6 +348,7 @@ def gen_supplier(lang: Lang) -> Example:
     b = TextBuilder()
     company = fake.company()
     addr = _address_oneline(fake)
+    # Supplier-side contact stays Faker (external party — fine to have unique)
     contact_name = fake.name()
     contact_email = fake.company_email()
     contact_phone = fake.phone_number()
@@ -306,7 +357,8 @@ def gen_supplier(lang: Lang) -> Example:
     cert = random.choice(CERTS)
     risk = random.choice(RISK_LEVELS_DE if lang == "de" else RISK_LEVELS_EN)
     decision = random.choice(DECISIONS_DE if lang == "de" else DECISIONS_EN)
-    reviewer = fake.name()
+    # Reviewer is internal — pulled from roster so we see Bosch staff reviewing suppliers
+    reviewer = pick_employee(lang)["name"]
 
     if lang == "de":
         b.add("Lieferantenanlage (ausgefüllt)\n")
@@ -349,11 +401,12 @@ def gen_supplier(lang: Lang) -> Example:
 def gen_training(lang: Lang) -> Example:
     fake = FAKERS[lang]
     b = TextBuilder()
-    name = fake.name()
-    emp_id = _employee_id()
-    instructor = fake.name()
+    emp = pick_employee(lang)
+    name = emp["name"]
+    emp_id = emp["emp_id"]
+    instructor = pick_manager(name)
     sig = _signature_from_name(instructor)
-    dept = random.choice(DEPARTMENTS_DE if lang == "de" else DEPARTMENTS_EN)
+    dept = emp["dept"]
     date = _date(fake, lang)
     course = random.choice(["GDPR Awareness", "Information Security Basics", "Code of Conduct", "Anti-Bribery", "Fire Safety", "Cyber Hygiene"])
     score = random.randint(60, 100)
