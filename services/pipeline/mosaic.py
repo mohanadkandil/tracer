@@ -37,40 +37,98 @@ from ..schemas import Span
 log = logging.getLogger("pipeline.mosaic")
 
 # Stoplist of common German / English corporate form labels that GLiNER zero-shot
-# often misclassifies as PERSON. If a "PERSON" span normalizes to one of these,
-# treat it as a false positive and skip it everywhere (links, graph, lookup).
+# often misclassifies as PERSON. Per-token check (any token match → reject).
 _PERSON_STOPWORDS = {
-    # German form labels
+    # German articles / determiners
+    "die", "der", "das", "den", "dem", "des", "ein", "eine", "einen", "einer", "eines",
+    # English articles
+    "the", "a", "an", "of", "for", "to", "on",
+    # Titles / honorifics (NOT names by themselves)
+    "mr", "mrs", "ms", "dr", "prof", "frau", "herr",
+    # German form labels (singulars + common variants)
     "pflege", "begründung", "begrundung", "genehmigung", "zugriff", "zugriffsebene",
-    "abteilung", "vorgesetzter", "datum", "unterschrift", "kommentare", "antrag",
-    "antragsteller", "ausgefüllt", "prüfung", "entscheidung", "system", "user",
-    "mitarbeiter", "name", "kategorie", "betrag", "beschreibung", "kurs", "ergebnis",
-    "status", "dozent", "teilnehmer", "vorfallsmeldung", "spesenabrechnung",
-    "lieferantenanlage", "schulungsbewertung", "review", "approval", "approver",
-    "comments", "purpose", "manager", "department", "summary", "engineering",
-    "der antragsteller", "der genehmiger", "eng", "data", "data zugriffsebene",
-    "data handling", "code", "passed", "failed", "approved", "rejected", "genehmigt",
-    "abgelehnt", "bedingt", "owner", "deadline", "frist", "verantwortlich",
-    "instructor", "participant", "course", "score",
+    "abteilung", "vorgesetzte", "vorgesetzter", "datum", "unterschrift", "kommentare",
+    "antrag", "antragsteller", "ausgefüllt", "prüfung", "entscheidung", "system",
+    "mitarbeiter", "mitarbeiterin", "name", "kategorie", "betrag", "beschreibung",
+    "kurs", "ergebnis", "status", "dozent", "teilnehmer", "teilnehmerin",
+    "vorfallsmeldung", "spesenabrechnung", "lieferantenanlage", "schulungsbewertung",
+    "purpose", "review", "approval", "approver", "comments", "manager", "department",
+    "summary", "engineering", "eng", "data", "code", "passed", "failed", "approved",
+    "rejected", "genehmigt", "abgelehnt", "bedingt", "owner", "deadline", "frist",
+    "verantwortlich", "instructor", "participant", "course", "score",
+    # Specific labels we saw leak in earlier scans
+    "firma", "steuernummer", "telefon", "zertifizierung", "ansprechpartner",
+    "risikostufe", "iban", "zweck", "rolle", "rollen", "erfassten", "erfasste",
+    "bearbeiter", "verteiler", "datenverarbeitung", "datenschutz", "maßnahme",
+    "massnahme", "empfängergruppe", "empfänger", "rahmen", "projektdokumentation",
+    "bahnticket", "lead", "governance", "false", "falsche", "auswahl",
 }
 
+# Words used in compound German-noun phrases that must reject the whole span.
+# If any of these substrings appear in a span's lowercase form → reject.
+_REJECT_SUBSTRINGS = (
+    "begründ", "begrund", "abteil", "genehmig", "unterschrift", "antrag",
+    "steuer", "firma", "kosten", "zertifiz", "verteil", "empfäng", "massnahm",
+    "maßnahm", "rahmen ", "ticket", "verarbeit", "kontroll", "auswahl",
+)
+
+# Whitelist: common European first names. Used only as a positive signal for
+# borderline cases — not required (allows realistic-looking but unfamiliar names).
+_COMMON_FIRST_NAMES = {
+    # German
+    "hans", "anna", "tobias", "elena", "jonas", "miriam", "philipp", "sara",
+    "klaus", "ute", "stefan", "katja", "michael", "lisa", "thomas", "petra",
+    "andreas", "monika", "wolfgang", "ingrid", "jürgen", "brigitte", "uwe",
+    "maike", "matthias", "claudia", "ralf", "susanne", "frank", "birgit",
+    # English
+    "john", "mary", "david", "sarah", "michael", "jessica", "kenneth", "linda",
+    "robert", "patricia", "james", "jennifer", "william", "elizabeth", "richard",
+    "barbara", "joseph", "susan", "thomas", "karen", "charles", "nancy",
+}
+
+
 def _is_false_person(value: str) -> bool:
-    """Reject a PERSON span if it looks like a form label, single word noun,
-    or pure punctuation. Conservative — we accept first-last names readily.
+    """Reject a PERSON span unless it looks like a real first+last name.
+
+    Rules:
+      1. Length 4-50 chars.
+      2. 2-4 tokens.
+      3. No token in stoplist (articles, form labels, common German nouns).
+      4. Each token must be alpha-only, ≥2 chars, start with uppercase.
+      5. Reject if any substring matches a German compound-noun pattern.
+      6. Reject if it contains ':' or digits.
     """
     v = value.strip()
-    if len(v) < 4:
+    if len(v) < 4 or len(v) > 50:
         return True
-    norm = v.lower().strip("., :;-")
-    if norm in _PERSON_STOPWORDS:
+    if ":" in v or any(ch.isdigit() for ch in v):
         return True
-    parts = norm.split()
-    # Reject any single-word "name" that contains common label words
-    if len(parts) == 1 and parts[0] in _PERSON_STOPWORDS:
+
+    low = v.lower()
+    for sub in _REJECT_SUBSTRINGS:
+        if sub in low:
+            return True
+
+    tokens = v.split()
+    if not (2 <= len(tokens) <= 4):
         return True
-    # Reject "Word: " patterns where colon survived span extraction
-    if ":" in v[:8]:
-        return True
+
+    for tok in tokens:
+        norm = tok.strip(".,;:-").lower()
+        if not norm:
+            return True
+        if norm in _PERSON_STOPWORDS:
+            return True
+        if len(norm) < 2:
+            return True
+        # All-alpha (allow unicode letters, hyphens, apostrophes)
+        if not all(c.isalpha() or c in "-'" for c in norm):
+            return True
+        # Must start with uppercase letter (after stripping leading punct)
+        cleaned = tok.lstrip(".,;:-")
+        if not cleaned or not cleaned[0].isupper():
+            return True
+
     return False
 
 
