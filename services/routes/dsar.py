@@ -17,6 +17,7 @@ from fastapi import APIRouter
 
 from ..db import get_conn
 from ..detectors.reasoner import make_reasoner
+from ..pipeline.mosaic import lookup_person
 from ..schemas import DSARMatch, DSARPlan, DSARRequest
 
 router = APIRouter(prefix="/dsar")
@@ -38,9 +39,9 @@ def _extract_identifiers(subject: str) -> list[str]:
 def plan(req: DSARRequest) -> DSARPlan:
     identifiers = _extract_identifiers(req.subject)
 
+    # First: substring match (handles non-name identifiers like emp IDs / emails)
+    files_matched: dict[str, list[str]] = {}
     with get_conn() as conn:
-        # Match where value LIKE any identifier
-        files_matched: dict[str, list[str]] = {}
         for ident in identifiers:
             rows = conn.execute(
                 "SELECT DISTINCT file_path, value FROM findings WHERE value LIKE ?",
@@ -48,6 +49,20 @@ def plan(req: DSARRequest) -> DSARPlan:
             ).fetchall()
             for r in rows:
                 files_matched.setdefault(r["file_path"], []).append(ident)
+
+    # Second: mosaic lookup — picks up files matched via canonicalization +
+    # embedding similarity even when the surface name differs.
+    identity = lookup_person(req.subject, fuzzy=True)
+    if identity is not None:
+        for path in identity.files:
+            files_matched.setdefault(path, []).append(identity.display_name)
+        # Make linked identifiers visible as matched terms
+        for label, values in identity.identifiers.items():
+            if label == "PERSON":
+                continue
+            for v in values:
+                for path in identity.files:
+                    files_matched.setdefault(path, []).append(f"{label}:{v}")
 
     matches: list[DSARMatch] = []
     for path, terms in files_matched.items():
@@ -84,6 +99,15 @@ def plan(req: DSARRequest) -> DSARPlan:
         risk_notes.append(
             "Low-confidence matches present; manual DPO review recommended before destructive action."
         )
+    if identity is not None:
+        if identity.re_id_risk in {"high", "critical"}:
+            risk_notes.append(
+                f"Re-identification risk: {identity.re_id_risk.upper()} — "
+                + "; ".join(identity.risk_factors)
+            )
+        if identity.fuzzy_matches:
+            aliases = ", ".join(f"{v} ({sim:.2f})" for _, v, sim in identity.fuzzy_matches[:3])
+            risk_notes.append(f"Fuzzy aliases linked via embedding: {aliases}")
 
     return DSARPlan(
         subject=req.subject,

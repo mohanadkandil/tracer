@@ -17,6 +17,7 @@ from ..connectors.base import BaseConnector, ConnectorEvent
 from ..db import get_conn
 from ..pipeline.dedup import content_hash, lookup_cached, remember
 from ..pipeline.extract import extract_text
+from ..pipeline.mosaic import link_findings_for_doc
 from ..pipeline.queue import ScanQueue, WorkItem
 from ..pipeline.routing import get_router
 from ..schemas import (
@@ -103,6 +104,8 @@ async def scan_file(req: ScanRequest) -> ScanResponse:
     # Persist findings (skip if scanning raw text)
     if source_path is not None:
         _persist_findings(file_id, source_path, spans)
+        # Build mosaic links so DSAR + person lookups see this doc
+        link_findings_for_doc(file_id, source_path, owner=None, text=text, spans=spans)
         if chash:
             remember(chash, [s.model_dump() for s in spans])
 
@@ -211,7 +214,9 @@ async def scan_stream(source: str = "filesystem"):
             ]
             remember(chash, spans_dump)
             file_id = str(uuid.uuid4())[:8]
-            _persist_findings(file_id, ev.path, [Span(**s) for s in spans_dump], owner=ev.owner)
+            spans_models = [Span(**s) for s in spans_dump]
+            _persist_findings(file_id, ev.path, spans_models, owner=ev.owner)
+            link_findings_for_doc(file_id, ev.path, ev.owner, text, spans_models)
             yield _sse(
                 "progress",
                 {

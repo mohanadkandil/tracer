@@ -50,6 +50,34 @@ CREATE INDEX IF NOT EXISTS idx_findings_file ON findings(file_id);
 CREATE INDEX IF NOT EXISTS idx_findings_owner ON findings(owner);
 CREATE INDEX IF NOT EXISTS idx_findings_label ON findings(label);
 
+CREATE TABLE IF NOT EXISTS entity_links (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    canonical       TEXT NOT NULL,       -- canonical key (e.g. "mueller-hans")
+    value           TEXT NOT NULL,       -- original observed value
+    label           TEXT NOT NULL,       -- PERSON | EMPLOYEE_ID | EMAIL | PHONE
+    file_id         TEXT NOT NULL,
+    file_path       TEXT NOT NULL,
+    finding_id      INTEGER,
+    owner           TEXT,
+    co_canonical    TEXT,                -- person canonical this identifier co-occurs with
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_links_canon ON entity_links(canonical);
+CREATE INDEX IF NOT EXISTS idx_links_co ON entity_links(co_canonical);
+CREATE INDEX IF NOT EXISTS idx_links_file ON entity_links(file_id);
+
+CREATE TABLE IF NOT EXISTS entity_embeddings (
+    finding_id      INTEGER PRIMARY KEY,
+    canonical       TEXT NOT NULL,
+    value           TEXT NOT NULL,
+    file_id         TEXT NOT NULL,
+    file_path       TEXT NOT NULL,
+    vector          BLOB NOT NULL,
+    dim             INTEGER NOT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_emb_canon ON entity_embeddings(canonical);
+
 CREATE TABLE IF NOT EXISTS agents (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,

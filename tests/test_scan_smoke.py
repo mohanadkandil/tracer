@@ -85,6 +85,26 @@ def test_findings_summary_shape() -> None:
         assert key in s
 
 
+def test_mosaic_canonicalization() -> None:
+    """Canonical key collapses common name variants to one identity."""
+    r = client.get("/mosaic/canonical", params={"name": "Hans Müller"})
+    assert r.status_code == 200
+    canon1 = r.json()["canonical"]
+    r2 = client.get("/mosaic/canonical", params={"name": "Müller, Hans"})
+    canon2 = r2.json()["canonical"]
+    r3 = client.get("/mosaic/canonical", params={"name": "Dr. Hans Müller"})
+    canon3 = r3.json()["canonical"]
+    assert canon1 == canon2 == canon3 == "mueller-hans"
+
+
+def test_mosaic_graph_endpoint() -> None:
+    r = client.get("/mosaic/graph")
+    assert r.status_code == 200
+    g = r.json()
+    assert "nodes" in g
+    assert "edges" in g
+
+
 def test_dsar_plan_runs() -> None:
     r = client.post("/dsar/plan", json={"subject": "Hans Müller", "article": "17"})
     assert r.status_code == 200
