@@ -4,26 +4,38 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type MosaicGraph, type PersonIdentity } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
-import { Search, Network } from "lucide-react";
+import { Search, Network, X } from "lucide-react";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
 
 // Editorial palette for nodes — matches DESIGN.md
 const LABEL_COLOR: Record<string, string> = {
-  PERSON: "#6f6555",       // warm gray — primary subject, not too heavy
-  EMPLOYEE_ID: "#8eaf80",  // sage
-  EMAIL: "#8aa7c4",        // blue
-  PHONE: "#d8a648",        // amber
-  ADDRESS: "#c47a64",      // copper
-  TAX_ID: "#b04848",       // oxblood
+  PERSON: "#6f6555",
+  EMPLOYEE_ID: "#8eaf80",
+  EMAIL: "#8aa7c4",
+  PHONE: "#d8a648",
+  ADDRESS: "#c47a64",
+  TAX_ID: "#b04848",
   IBAN: "#b04848",
-  USERNAME: "#b59cc8",     // purple
-  SIGNATURE: "#b08855",    // gold
+  USERNAME: "#b59cc8",
+  SIGNATURE: "#b08855",
   COMPANY: "#9a8e78",
   DEPARTMENT: "#9a8e78",
 };
 
 const LEGEND_ORDER: string[] = ["PERSON", "EMPLOYEE_ID", "EMAIL", "PHONE", "ADDRESS", "TAX_ID", "USERNAME", "SIGNATURE"];
+
+// Focus mode: dim factor for non-cluster nodes/edges
+const DIM_OPACITY = 0.08;
+const FOCUS_RING_COLOR = "#b9c441"; // citrine
+
+function hexWithAlpha(hex: string, alpha: number): string {
+  // Convert #rrggbb → rgba string
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 export default function MosaicPage() {
   const [graph, setGraph] = useState<MosaicGraph | null>(null);
@@ -50,6 +62,14 @@ export default function MosaicPage() {
     } catch (e) {
       setErr(String(e));
     }
+  }
+
+  function clearFocus() {
+    setPerson(null);
+    setQuery("");
+    setErr(null);
+    // Recenter
+    fgRef.current?.zoomToFit?.(400, 60);
   }
 
   useEffect(() => {
@@ -87,6 +107,47 @@ export default function MosaicPage() {
     }
   }
 
+  // Build the "focused cluster" set: selected canonical + every neighbor (1-hop)
+  // plus all edges between members of that set. Anything outside the set is dimmed.
+  const focusSet = useMemo(() => {
+    if (!person || !graph) return null;
+    const focal = person.canonical;
+    const neighbors = new Set<string>([focal]);
+    const focusEdges = new Set<string>();
+
+    for (const e of graph.edges) {
+      const s = typeof e.source === "string" ? e.source : (e.source as any).id;
+      const t = typeof e.target === "string" ? e.target : (e.target as any).id;
+      if (s === focal || t === focal) {
+        neighbors.add(s);
+        neighbors.add(t);
+        focusEdges.add(`${s}|${t}`);
+        focusEdges.add(`${t}|${s}`);
+      }
+    }
+    return { focal, nodes: neighbors, edges: focusEdges };
+  }, [person, graph]);
+
+  // When focus changes, center + zoom on the cluster
+  useEffect(() => {
+    if (!fgRef.current || !graph) return;
+    if (!focusSet) {
+      const t = setTimeout(() => fgRef.current?.zoomToFit?.(400, 80), 100);
+      return () => clearTimeout(t);
+    }
+    // Wait one frame for d3 to place nodes, then center on focal node
+    const t = setTimeout(() => {
+      const fg = fgRef.current;
+      if (!fg) return;
+      const node = (data.nodes as any[]).find((n) => n.id === focusSet.focal);
+      if (node && typeof node.x === "number" && typeof node.y === "number") {
+        fg.centerAt(node.x, node.y, 800);
+        fg.zoom(3.2, 800);
+      }
+    }, 120);
+    return () => clearTimeout(t);
+  }, [focusSet, graph]);
+
   const data = useMemo(() => {
     if (!graph) return { nodes: [], links: [] };
     return {
@@ -95,7 +156,6 @@ export default function MosaicPage() {
         label: n.label,
         value: n.value,
         docs: n.docs,
-        // small + tight range. Person slightly bigger than ID.
         val: n.label === "PERSON" ? Math.min(6, 2 + n.docs * 0.25) : Math.min(4, 1.5 + n.docs * 0.2),
       })),
       links: graph.edges.map((e) => ({ source: e.source, target: e.target })),
@@ -124,6 +184,11 @@ export default function MosaicPage() {
             />
           </div>
           <button className="btn btn-primary" onClick={lookup}>Look up</button>
+          {focusSet && (
+            <button className="btn btn-ghost" onClick={clearFocus} title="Clear focus">
+              <X size={13} /> Clear focus
+            </button>
+          )}
 
           {suggestions.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
@@ -140,7 +205,6 @@ export default function MosaicPage() {
             </div>
           )}
 
-          {/* Legend */}
           <div className="ml-auto flex items-center gap-3 flex-wrap">
             {LEGEND_ORDER.map((label) => (
               <div key={label} className="flex items-center gap-1.5">
@@ -152,7 +216,6 @@ export default function MosaicPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
-          {/* Graph canvas */}
           <div
             ref={wrapRef}
             className="card lg:col-span-2 relative overflow-hidden bg-[var(--paper-card)]"
@@ -162,6 +225,11 @@ export default function MosaicPage() {
               <Network size={11} />
               <span>
                 {graph?.nodes.length ?? 0} nodes · {graph?.edges.length ?? 0} edges
+                {focusSet && (
+                  <span className="ml-2 text-[var(--ink)]">
+                    · focusing {focusSet.nodes.size} of {graph?.nodes.length}
+                  </span>
+                )}
               </span>
             </div>
 
@@ -173,23 +241,52 @@ export default function MosaicPage() {
                 height={dims.h}
                 backgroundColor="#faf5eb"
                 nodeRelSize={3}
-                nodeColor={(n: any) => LABEL_COLOR[n.label] || "#6f6555"}
-                linkColor={() => "rgba(42, 38, 32, 0.14)"}
-                linkWidth={0.5}
+                nodeColor={(n: any) => {
+                  const base = LABEL_COLOR[n.label] || "#6f6555";
+                  if (!focusSet) return base;
+                  if (focusSet.nodes.has(n.id)) return base;
+                  return hexWithAlpha(base, DIM_OPACITY);
+                }}
+                linkColor={(l: any) => {
+                  const s = typeof l.source === "string" ? l.source : l.source?.id;
+                  const t = typeof l.target === "string" ? l.target : l.target?.id;
+                  if (!focusSet) return "rgba(42, 38, 32, 0.14)";
+                  if (focusSet.edges.has(`${s}|${t}`)) return "rgba(42, 38, 32, 0.45)";
+                  return "rgba(42, 38, 32, 0.04)";
+                }}
+                linkWidth={(l: any) => {
+                  if (!focusSet) return 0.5;
+                  const s = typeof l.source === "string" ? l.source : l.source?.id;
+                  const t = typeof l.target === "string" ? l.target : l.target?.id;
+                  return focusSet.edges.has(`${s}|${t}`) ? 1.2 : 0.3;
+                }}
                 nodeLabel={(n: any) => `${n.label} · ${n.value} · ${n.docs} docs`}
                 cooldownTicks={240}
                 d3AlphaDecay={0.012}
                 d3VelocityDecay={0.45}
+                onNodeClick={(n: any) => {
+                  if (n.label === "PERSON") pick(n.value);
+                }}
                 nodeCanvasObjectMode={() => "after"}
                 nodeCanvasObject={(node: any, ctx, scale) => {
-                  if (scale < 1.4) return;
-                  if (node.val < 4) return;
+                  // Focal ring on selected person
+                  if (focusSet && node.id === focusSet.focal) {
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, node.val + 5 / scale, 0, 2 * Math.PI);
+                    ctx.strokeStyle = FOCUS_RING_COLOR;
+                    ctx.lineWidth = 2 / scale;
+                    ctx.stroke();
+                  }
+                  // Labels: always on focused cluster, otherwise only on zoom
+                  const inFocus = focusSet?.nodes.has(node.id);
+                  const showLabel = inFocus || (scale >= 1.4 && node.val >= 4);
+                  if (!showLabel) return;
                   ctx.font = `${10 / scale}px Geist, -apple-system, sans-serif`;
-                  ctx.fillStyle = "#2a2620";
+                  ctx.fillStyle = inFocus ? "#2a2620" : "rgba(42, 38, 32, 0.5)";
                   ctx.textAlign = "left";
                   ctx.textBaseline = "middle";
-                  const truncated = (node.value || "").length > 22 ? node.value.slice(0, 22) + "…" : node.value;
-                  ctx.fillText(truncated, node.x + node.val + 4 / scale, node.y);
+                  const txt = (node.value || "").length > 24 ? node.value.slice(0, 24) + "…" : node.value;
+                  ctx.fillText(txt, node.x + node.val + 4 / scale, node.y);
                 }}
               />
             ) : (
@@ -215,7 +312,7 @@ export default function MosaicPage() {
             {err && <div className="text-[var(--oxblood)] text-[13px]">{err}</div>}
             {!person && !err && (
               <p className="text-[var(--ink-dim)] text-[13px] leading-relaxed">
-                Search a name to resolve every linked identifier across all scanned documents. Embedding-based fuzzy match included.
+                Search a name or <span className="text-[var(--ink)]">click a PERSON node</span> in the graph. The selected cluster will highlight while everything else dims.
               </p>
             )}
             {person && (
