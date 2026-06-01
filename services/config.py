@@ -31,8 +31,10 @@ ENTITY_LABELS: list[str] = [
     "USERNAME",
 ]
 
-# Storage
+# Storage — defaults work for local + Railway (mount volume at /app/data)
 DB_PATH: Path = Path(os.environ.get("DB_PATH", "data/scan.db"))
+# Where rendered PDFs / demo files live for the FileSystem connector
+# In prod set this to a volume path; local stays at data/files/
 
 # Workers
 WORKER_COUNT: int = int(os.environ.get("WORKERS", "4"))
@@ -41,7 +43,14 @@ QUEUE_MAX_SIZE: int = int(os.environ.get("QUEUE_MAX", "1024"))
 # Demo data
 DEMO_FILES_ROOT: Path = Path(os.environ.get("DEMO_ROOT", "data/files"))
 
-# CORS — Next.js dev server
-CORS_ORIGINS: list[str] = os.environ.get(
-    "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-).split(",")
+# CORS — Next.js dev server + production Vercel domain(s)
+# Set CORS_ORIGINS as comma-separated list in prod. Use "*" only for demos.
+CORS_ORIGINS: list[str] = [
+    o.strip() for o in os.environ.get(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",") if o.strip()
+]
+
+# Regex allowlist for preview deployments (Vercel gives unique URLs per push)
+CORS_ORIGIN_REGEX: str | None = os.environ.get("CORS_ORIGIN_REGEX")

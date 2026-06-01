@@ -1,0 +1,33 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+.DS_Store
+
+# Frontend lives separately on Vercel
+frontend/
+
+# Data + models on volumes, not in image
+data/
+models/
+.hf-cache/
+
+# Dev tooling
+.context/
+.vscode/
+.idea/
+*.log
+
+# Docs and ADRs (small, but skip to keep image lean)
+docs/
+DESIGN.md
+README.md
+.context-old/
+
+# Training pipeline (run on Colab, not in prod)
+train/
+
+# Tests
+tests/
+.pytest_cache
