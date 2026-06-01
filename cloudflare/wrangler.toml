@@ -1,0 +1,8 @@
+name = "email-to-dsar"
+main = "email-worker.js"
+compatibility_date = "2025-01-01"
+
+# Email Workers must export `email` handler — Cloudflare auto-detects.
+
+[vars]
+FORGETTER_API_BASE = "https://api.usecompli.app"
