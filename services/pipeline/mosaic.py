@@ -245,27 +245,33 @@ def link_findings_for_doc(
     if not people and not ids:
         return 0
 
-    person_keys = [(canonical_person(p.value), p.value) for p in people]
-    id_keys = [(canonical_identifier(i.label, i.value), i.value, i.label) for i in ids]
-
     finding_ids = finding_ids or {}
     rows: list[tuple] = []
 
-    # Person node: one self row per person, plus one row per linked identifier
-    for p_canon, p_val in person_keys:
-        rows.append((p_canon, p_val, "PERSON", file_id, file_path,
-                     finding_ids.get((-1, -1, p_val)), owner, p_canon))
-        for i_canon, i_val, i_label in id_keys:
-            rows.append((p_canon, i_val, i_label, file_id, file_path,
-                         finding_ids.get((-1, -1, i_val)), owner, p_canon))
-            rows.append((i_canon, i_val, i_label, file_id, file_path,
-                         finding_ids.get((-1, -1, i_val)), owner, p_canon))
+    # Person node: one self row per person
+    for p in people:
+        p_canon = canonical_person(p.value)
+        rows.append((p_canon, p.value, "PERSON", file_id, file_path,
+                     finding_ids.get((-1, -1, p.value)), owner, p_canon))
 
-    # Orphan identifiers (no PERSON in this doc) — link to themselves
-    if not people:
-        for i_canon, i_val, i_label in id_keys:
-            rows.append((i_canon, i_val, i_label, file_id, file_path,
-                         finding_ids.get((-1, -1, i_val)), owner, None))
+    # Link each identifier to the CLOSEST person by character distance.
+    # Stops the bug where every PERSON in the doc got every ID. Now the
+    # employee's emp_id sticks with the employee, not the manager.
+    for i in ids:
+        i_canon = canonical_identifier(i.label, i.value)
+        closest_person = _closest_person(i, people)
+        if closest_person is None:
+            # Orphan identifier — link to itself only
+            rows.append((i_canon, i.value, i.label, file_id, file_path,
+                         finding_ids.get((-1, -1, i.value)), owner, None))
+            continue
+        p_canon = canonical_person(closest_person.value)
+        # Row tied to the person (so /mosaic/person finds it)
+        rows.append((p_canon, i.value, i.label, file_id, file_path,
+                     finding_ids.get((-1, -1, i.value)), owner, p_canon))
+        # And a row keyed by the identifier itself (so graph can render it as a node)
+        rows.append((i_canon, i.value, i.label, file_id, file_path,
+                     finding_ids.get((-1, -1, i.value)), owner, p_canon))
 
     with get_conn() as conn:
         conn.executemany(
@@ -307,6 +313,27 @@ def link_findings_for_doc(
 def _context_window(text: str, span: Span) -> str:
     half = EMBEDDING_CONTEXT_CHARS // 2
     return text[max(0, span.start - half) : span.end + half]
+
+
+def _closest_person(ident: Span, people: list[Span]) -> Span | None:
+    """Return the PERSON span whose center is closest to this identifier's center.
+
+    Ties broken by 'person comes before identifier' (typical doc shape:
+    'Mitarbeiter: Hans Müller (E-43217)' — name first, ID after).
+    """
+    if not people:
+        return None
+    ident_center = (ident.start + ident.end) / 2
+    best: tuple[float, int, Span] | None = None  # (distance, tie_break, span)
+    for p in people:
+        p_center = (p.start + p.end) / 2
+        distance = abs(ident_center - p_center)
+        # Prefer person that appears BEFORE the identifier on tie
+        tie = 0 if p.end <= ident.start else 1
+        key = (distance, tie)
+        if best is None or key < (best[0], best[1]):
+            best = (distance, tie, p)
+    return best[2] if best else None
 
 
 # ---------- L3: embeddings ----------
@@ -412,20 +439,13 @@ def lookup_person(query: str, fuzzy: bool = True) -> PersonIdentity | None:
             if len(r["value"]) > len(display_name):
                 display_name = r["value"]
 
-    # L3 fuzzy expansion
+    # L3 fuzzy aliases — surfaced separately as "possibly the same person" hints.
+    # We deliberately do NOT merge their identifiers into the canonical identity
+    # set. Embedding similarity is a HINT, not proof. The DPO can click through
+    # to confirm. Merging would pollute the panel with strangers' IDs.
     fuzzy_matches: list[tuple[str, str, float]] = []
     if fuzzy:
         fuzzy_matches = _fuzzy_neighbors(canon)
-        for other_canon, _other_val, _sim in fuzzy_matches:
-            with get_conn() as conn:
-                more = conn.execute(
-                    "SELECT label, value, file_path FROM entity_links "
-                    "WHERE canonical = ? OR co_canonical = ?",
-                    (other_canon, other_canon),
-                ).fetchall()
-            for r in more:
-                identifiers.setdefault(r["label"], set()).add(r["value"])
-                files.add(r["file_path"])
 
     risk, factors = _score_risk(identifiers, files)
 
