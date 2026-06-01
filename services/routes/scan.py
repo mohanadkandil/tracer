@@ -15,6 +15,7 @@ from ..config import DEMO_FILES_ROOT
 from ..connectors import FileSystemConnector, GraphConnector
 from ..connectors.base import BaseConnector, ConnectorEvent
 from ..db import get_conn
+from ..pipeline.chunks import index_doc
 from ..pipeline.dedup import content_hash, lookup_cached, remember
 from ..pipeline.extract import extract_text
 from ..pipeline.mosaic import link_findings_for_doc
@@ -106,6 +107,8 @@ async def scan_file(req: ScanRequest) -> ScanResponse:
         _persist_findings(file_id, source_path, spans)
         # Build mosaic links so DSAR + person lookups see this doc
         link_findings_for_doc(file_id, source_path, owner=None, text=text, spans=spans)
+        # Embed doc chunks so /chat retrieval can find this content
+        await asyncio.to_thread(index_doc, file_id, source_path, text)
         if chash:
             remember(chash, [s.model_dump() for s in spans])
 
@@ -217,6 +220,7 @@ async def scan_stream(source: str = "filesystem"):
             spans_models = [Span(**s) for s in spans_dump]
             _persist_findings(file_id, ev.path, spans_models, owner=ev.owner)
             link_findings_for_doc(file_id, ev.path, ev.owner, text, spans_models)
+            await asyncio.to_thread(index_doc, file_id, ev.path, text)
             yield _sse(
                 "progress",
                 {

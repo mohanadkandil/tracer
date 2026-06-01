@@ -43,13 +43,14 @@ def health() -> dict:
 
 # Route imports deferred to avoid circular + heavy detector loads on import.
 def _mount_routes() -> None:
-    from .routes import agents, dsar, findings, mosaic, scan  # noqa: WPS433
+    from .routes import agents, chat, dsar, findings, mosaic, scan  # noqa: WPS433
 
     app.include_router(scan.router, tags=["scan"])
     app.include_router(agents.router, tags=["agents"])
     app.include_router(findings.router, tags=["findings"])
     app.include_router(dsar.router, tags=["dsar"])
     app.include_router(mosaic.router, tags=["mosaic"])
+    app.include_router(chat.router, tags=["chat"])
 
     # Prometheus instrumentation
     try:

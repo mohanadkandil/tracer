@@ -99,6 +99,19 @@ CREATE INDEX IF NOT EXISTS idx_links_canon ON entity_links(canonical);
 CREATE INDEX IF NOT EXISTS idx_links_co ON entity_links(co_canonical);
 CREATE INDEX IF NOT EXISTS idx_links_file ON entity_links(file_id);
 
+CREATE TABLE IF NOT EXISTS doc_chunks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id         TEXT NOT NULL,
+    file_path       TEXT NOT NULL,
+    chunk_index     INTEGER NOT NULL,
+    text            TEXT NOT NULL,
+    vector          BLOB NOT NULL,
+    dim             INTEGER NOT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(file_id, chunk_index)
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_file ON doc_chunks(file_id);
+
 CREATE TABLE IF NOT EXISTS entity_embeddings (
     finding_id      INTEGER PRIMARY KEY,
     canonical       TEXT NOT NULL,

@@ -226,6 +226,14 @@ export const api = {
     return new EventSource(`${BASE}/dsar/notifications/stream`);
   },
 
+  // ===== Chat (RAG) =====
+
+  chatHealth: () => http<{ provider: string; chunks_indexed: number }>("/chat/health"),
+  chatSuggestions: () => http<string[]>("/chat/suggestions"),
+  chatStream(query: string): EventSource {
+    return new EventSource(`${BASE}/chat/stream?q=${encodeURIComponent(query)}`);
+  },
+
   /** SSE — returns an EventSource you must close yourself. */
   scanStreamEventSource(source: "filesystem" | "sharepoint" = "sharepoint"): EventSource {
     return new EventSource(`${BASE}/scan/stream?source=${source}`);
