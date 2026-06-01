@@ -3,6 +3,9 @@ main = "email-worker.js"
 compatibility_date = "2025-01-01"
 
 # Email Workers must export `email` handler — Cloudflare auto-detects.
+#
+# For LOCAL DEV: set FORGETTER_API_BASE to your current ngrok URL.
+# For PROD: set it to https://api.usecompli.app once Railway is live.
 
 [vars]
 FORGETTER_API_BASE = "https://api.usecompli.app"

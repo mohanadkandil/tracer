@@ -2,7 +2,13 @@
  * Scan-service HTTP client. Single typed wrapper used by every page.
  */
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+// When deployed (Vercel) we fall back to the demo ngrok tunnel pointed at the
+// local backend. For local dev we hit localhost:8000. Override with
+// NEXT_PUBLIC_API_BASE in either env to point elsewhere.
+const PROD_FALLBACK = "https://9b16-153-92-93-227.ngrok-free.app";
+const BASE =
+  process.env.NEXT_PUBLIC_API_BASE ||
+  (process.env.NODE_ENV === "production" ? PROD_FALLBACK : "http://localhost:8000");
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
