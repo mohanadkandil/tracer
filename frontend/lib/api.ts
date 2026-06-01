@@ -114,6 +114,34 @@ export type DSARPlan = {
   risk_notes: string[];
 };
 
+export type DSARRequestRecord = {
+  id: string;
+  subject: string;
+  requester_email: string | null;
+  article: string;
+  source: "web" | "api" | "slack" | "email" | "webhook";
+  status: "pending" | "approved" | "declined" | "executed";
+  identifiers: string[];
+  created_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+  decision_note: string | null;
+  files_processed: number;
+  findings_erased: number;
+  cert_pdf_path: string | null;
+};
+
+export type NotificationItem = {
+  id: number;
+  kind: "dsar_new" | "dsar_executed" | "system";
+  title: string;
+  body: string | null;
+  target_url: string | null;
+  request_id: string | null;
+  created_at: string;
+  seen: boolean;
+};
+
 // ===== API =====
 
 export const api = {
@@ -165,6 +193,38 @@ export const api = {
       "/dsar/execute",
       { method: "POST", body: JSON.stringify({ subject, article }) },
     ),
+
+  // ===== DSAR lifecycle =====
+
+  dsarInbox: (payload: { body?: string; subject?: string; requester_email?: string; article?: "17" | "5" | "32"; source?: "web" | "api" | "slack" | "email" | "webhook" }) =>
+    http<DSARRequestRecord>("/dsar/inbox", { method: "POST", body: JSON.stringify(payload) }),
+
+  dsarRequests: (status?: string) =>
+    http<DSARRequestRecord[]>(`/dsar/requests${status ? `?status=${status}` : ""}`),
+
+  dsarRequest: (id: string) =>
+    http<DSARRequestRecord & { plan: DSARPlan; identity: PersonIdentity | null }>(`/dsar/requests/${id}`),
+
+  dsarDecide: (id: string, decision: "approve" | "decline", note?: string, decided_by?: string) =>
+    http<DSARRequestRecord>(`/dsar/requests/${id}/decide`, {
+      method: "POST",
+      body: JSON.stringify({ decision, note, decided_by }),
+    }),
+
+  dsarExecuteRequest: (id: string) =>
+    http<DSARRequestRecord>(`/dsar/requests/${id}/execute`, { method: "POST" }),
+
+  dsarCertUrl: (id: string) => `${BASE}/dsar/requests/${id}/certificate`,
+
+  notifications: (unseenOnly = false, limit = 30) =>
+    http<NotificationItem[]>(`/dsar/notifications?unseen_only=${unseenOnly}&limit=${limit}`),
+
+  notificationSeen: (id: number) =>
+    http<{ ok: boolean }>(`/dsar/notifications/${id}/seen`, { method: "POST" }),
+
+  notificationStream(): EventSource {
+    return new EventSource(`${BASE}/dsar/notifications/stream`);
+  },
 
   /** SSE — returns an EventSource you must close yourself. */
   scanStreamEventSource(source: "filesystem" | "sharepoint" = "sharepoint"): EventSource {

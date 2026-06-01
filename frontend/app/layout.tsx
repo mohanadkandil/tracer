@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
+import { Topbar } from "@/components/topbar";
 
 export const metadata: Metadata = {
   title: "Forgetter — Bosch GDPR Data Discovery",
@@ -24,7 +25,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen flex">
         <Sidebar />
-        <main className="flex-1 overflow-x-hidden">{children}</main>
+        <div className="flex-1 flex flex-col overflow-x-hidden">
+          <Topbar />
+          <main className="flex-1 overflow-x-hidden">{children}</main>
+        </div>
       </body>
     </html>
   );

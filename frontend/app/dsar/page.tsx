@@ -1,17 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import { api, type DSARPlan } from "@/lib/api";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { api, type DSARRequestRecord } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
-import { Send, ShieldCheck, AlertTriangle, FileText, Trash2 } from "lucide-react";
+import { Send, Mail, MessageSquare, Globe, Inbox as InboxIcon, Webhook } from "lucide-react";
+import clsx from "clsx";
 
-const SAMPLE_EMAIL = `Subject: GDPR Article 17 Erasure Request
+const SAMPLE_EMAIL = `From: hans.mueller@bosch.example
+To: privacy@bosch.example
+Subject: GDPR Article 17 erasure request
 
 Dear Bosch Data Protection Office,
 
-I, Hans Müller, hereby formally request the erasure of all personal data
-relating to me from your systems, in accordance with Article 17 of the
-GDPR.
+I, Hans Müller, hereby formally request the erasure of all personal
+data relating to me from your systems, in accordance with Article 17
+of the GDPR. My employee ID is E-43217.
 
 Kindly confirm completion within 30 days.
 
@@ -19,39 +23,53 @@ Hans Müller
 hans.mueller@bosch.example
 `;
 
-export default function DSARPage() {
-  const [email, setEmail] = useState(SAMPLE_EMAIL);
-  const [subject, setSubject] = useState("Hans Müller");
-  const [plan, setPlan] = useState<DSARPlan | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [executed, setExecuted] = useState<{ files_processed: number; findings_erased: number } | null>(null);
+const SOURCE_LABELS: Record<string, { icon: any; label: string }> = {
+  email: { icon: Mail, label: "Email" },
+  web: { icon: Globe, label: "Web form" },
+  api: { icon: Webhook, label: "API" },
+  webhook: { icon: Webhook, label: "Webhook" },
+  slack: { icon: MessageSquare, label: "MessageSquare" },
+};
 
-  async function runPlan() {
-    setLoading(true);
-    setErr(null);
-    setPlan(null);
-    setExecuted(null);
+const STATUS_PILL: Record<string, string> = {
+  pending: "pill-medium",
+  approved: "pill-citrine",
+  declined: "pill-critical",
+  executed: "pill-low",
+};
+
+export default function DSARInboxPage() {
+  const [items, setItems] = useState<DSARRequestRecord[]>([]);
+  const [body, setBody] = useState(SAMPLE_EMAIL);
+  const [source, setSource] = useState<"email" | "web" | "api">("email");
+  const [submitting, setSubmitting] = useState(false);
+  const [filter, setFilter] = useState<"all" | "pending" | "executed">("all");
+  const [err, setErr] = useState<string | null>(null);
+
+  async function load() {
     try {
-      const result = await api.dsarPlan(subject, "17");
-      setPlan(result);
+      const status = filter === "all" ? undefined : filter;
+      const r = await api.dsarRequests(status);
+      setItems(r);
     } catch (e) {
       setErr(String(e));
-    } finally {
-      setLoading(false);
     }
   }
 
-  async function execute() {
-    if (!confirm(`Execute erasure for ${subject}? This deletes findings records (demo-mode, files preserved).`)) return;
-    setLoading(true);
+  useEffect(() => { load(); }, [filter]);
+
+  async function submit() {
+    setSubmitting(true);
+    setErr(null);
     try {
-      const r = await api.dsarExecute(subject, "17");
-      setExecuted({ files_processed: r.files_processed, findings_erased: r.findings_erased });
+      const r = await api.dsarInbox({ body, source });
+      await load();
+      // Navigate to the new request page
+      window.location.href = `/dsar/${r.id}`;
     } catch (e) {
       setErr(String(e));
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
@@ -60,122 +78,152 @@ export default function DSARPage() {
       <PageHeader
         kicker="DSAR · 05"
         title="Erasure Copilot"
-        subtitle="Article 17 right-to-erasure workflow. Paste the request, the agent finds every file, proposes actions, generates the compliance certificate."
+        subtitle="Universal intake — email, MessageSquare, web, API. Every request becomes a reviewable case with linked mosaic and signed certificate."
       />
 
       <div className="px-10 py-8 grid grid-cols-1 lg:grid-cols-5 gap-6 mb-12">
+        {/* Intake form */}
         <div className="lg:col-span-2 flex flex-col gap-4">
           <div className="card p-5">
-            <h3 className="text-xs uppercase tracking-widest text-[var(--fg-dim)] mb-3">Erasure request</h3>
+            <div className="flex items-center justify-between mb-3">
+              <div className="kicker">New request · simulate intake</div>
+              <div className="flex items-center bg-[var(--paper-elev)] border border-[var(--rule)] rounded-md overflow-hidden">
+                {(["email", "api", "web"] as const).map((s) => {
+                  const meta = SOURCE_LABELS[s];
+                  const Icon = meta.icon;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => setSource(s)}
+                      className={clsx(
+                        "px-2 py-1 text-[10px] flex items-center gap-1 font-mono tracking-wide",
+                        source === s ? "bg-[var(--paper-card)] text-[var(--ink)]" : "text-[var(--ink-dim)]",
+                      )}
+                    >
+                      <Icon size={10} /> {meta.label.toUpperCase()}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <textarea
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              rows={10}
-              className="w-full bg-[var(--bg-elev)] border border-[var(--border)] rounded-lg p-3 text-sm code resize-none focus:outline-none focus:border-[var(--accent)]"
-              placeholder="Paste the erasure request email..."
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={14}
+              className="w-full bg-[var(--paper-elev)] border border-[var(--rule)] rounded-md p-3 text-[12.5px] code resize-none focus:outline-none focus:border-[var(--rule-strong)]"
+              placeholder="Paste an erasure request email or message..."
             />
-            <div className="mt-3 flex items-center gap-2">
-              <label className="text-xs text-[var(--fg-dim)]">Subject</label>
-              <input
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="flex-1 bg-[var(--bg-elev)] border border-[var(--border)] rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-[var(--accent)]"
-              />
-              <button className="btn btn-primary" onClick={runPlan} disabled={loading}>
-                <Send size={14} /> {loading ? "Planning..." : "Run plan"}
-              </button>
+            <button
+              className="btn btn-primary mt-3 w-full justify-center"
+              onClick={submit}
+              disabled={submitting || !body.trim()}
+            >
+              <Send size={13} /> {submitting ? "Submitting…" : "Submit request"}
+            </button>
+            <p className="text-[10.5px] text-[var(--ink-fade)] mt-2 leading-relaxed">
+              Parses identifiers from the message (name, email, employee ID, GDPR article), creates a pending request, and fires a notification.
+            </p>
+          </div>
+
+          {/* Integration cheat sheet */}
+          <div className="card p-5">
+            <div className="kicker mb-3">Integration · how to trigger from outside</div>
+            <div className="flex flex-col gap-3 text-[11.5px] leading-relaxed">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Webhook size={12} className="text-[var(--ink-dim)]" />
+                  <span className="font-medium">API webhook</span>
+                </div>
+                <div className="code bg-[var(--paper-elev)] border border-[var(--rule)] rounded p-2 text-[10.5px] whitespace-pre-wrap">
+{`POST /dsar/inbox
+{
+  "body": "<email body>",
+  "source": "email"
+}`}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <MessageSquare size={12} className="text-[var(--ink-dim)]" />
+                  <span className="font-medium">MessageSquare incoming webhook</span>
+                </div>
+                <p className="text-[var(--ink-dim)]">
+                  Set <span className="kbd">SLACK_WEBHOOK_URL</span> in backend env — every notification is also posted to your MessageSquare channel with Block Kit + Review button.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Inbox */}
+        <div className="lg:col-span-3">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="kicker">Inbox</div>
+            <div className="flex items-center bg-[var(--paper-card)] border border-[var(--rule)] rounded-md overflow-hidden ml-auto">
+              {(["all", "pending", "executed"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={clsx(
+                    "px-3 py-1.5 text-[11px] font-mono tracking-wide uppercase",
+                    filter === f ? "bg-[var(--paper-elev)] text-[var(--ink)]" : "text-[var(--ink-dim)]",
+                  )}
+                >
+                  {f}
+                </button>
+              ))}
             </div>
           </div>
 
-          {plan && (
-            <div className="card p-5">
-              <h3 className="text-xs uppercase tracking-widest text-[var(--fg-dim)] mb-3">Reasoner summary</h3>
-              <p className="text-sm text-[var(--fg)] leading-relaxed">{plan.summary}</p>
-              {plan.risk_notes.length > 0 && (
-                <div className="mt-4 flex flex-col gap-2">
-                  {plan.risk_notes.map((n, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-[var(--warn)]">
-                      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                      <span>{n}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+          {err && <div className="card p-4 text-[var(--oxblood)] text-[13px] mb-4">{err}</div>}
 
-        <div className="lg:col-span-3">
-          {err && (
-            <div className="card p-4 mb-3 text-[var(--bad)] text-sm">{err}</div>
-          )}
-          {!plan && !err && (
-            <div className="card p-8 text-center text-[var(--fg-dim)]">
-              <ShieldCheck size={28} className="mx-auto mb-3 text-[var(--fg-dim)]" />
-              <p className="text-sm">Run plan to see the Forgetting Plan and proposed actions.</p>
+          {items.length === 0 ? (
+            <div className="card p-10 text-center">
+              <InboxIcon size={24} className="mx-auto text-[var(--ink-fade)] mb-2" />
+              <p className="text-[13px] text-[var(--ink-dim)]">No requests in this view yet.</p>
+              <p className="text-[11px] text-[var(--ink-fade)] mt-1">Submit one on the left to see the flow.</p>
             </div>
-          )}
-          {plan && (
+          ) : (
             <div className="card overflow-hidden">
-              <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold">Forgetting Plan</h3>
-                  <p className="text-xs text-[var(--fg-dim)] mt-0.5">
-                    Subject: <span className="text-[var(--fg)]">{plan.subject}</span> · Article {plan.article} ·{" "}
-                    {plan.matches.length} files matched
-                  </p>
-                </div>
-                <button className="btn btn-primary" onClick={execute} disabled={loading || plan.matches.length === 0}>
-                  <Trash2 size={14} /> Execute erasure
-                </button>
-              </div>
-
-              {executed && (
-                <div className="px-5 py-3 bg-[var(--good)]/10 border-b border-[var(--border)] text-[var(--good)] text-sm flex items-center gap-2">
-                  <ShieldCheck size={16} /> Erased {executed.findings_erased} findings across{" "}
-                  {executed.files_processed} files. Compliance certificate available.
-                </div>
-              )}
-
-              <div className="max-h-[60vh] overflow-y-auto">
-                {plan.matches.length === 0 && (
-                  <div className="p-8 text-center text-[var(--fg-dim)] text-sm">
-                    No files matched. Try a different subject or run a scan first.
-                  </div>
-                )}
-                {plan.matches.map((m) => (
-                  <div key={m.file_path} className="px-5 py-3 border-b border-[var(--border)] last:border-0">
+              {items.map((r, idx) => {
+                const SrcIcon = SOURCE_LABELS[r.source]?.icon || Mail;
+                return (
+                  <Link
+                    key={r.id}
+                    href={`/dsar/${r.id}`}
+                    className={clsx(
+                      "block px-5 py-4 hover:bg-[var(--paper-aged)]/40 transition-colors",
+                      idx > 0 && "border-t border-[var(--rule)]",
+                    )}
+                  >
                     <div className="flex items-start gap-3">
-                      <FileText size={14} className="text-[var(--fg-dim)] mt-1 shrink-0" />
+                      <div className="mt-1 text-[var(--ink-dim)]">
+                        <SrcIcon size={13} />
+                      </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs code text-[var(--fg)] break-all">{m.file_path}</div>
-                        <div className="text-xs text-[var(--fg-dim)] mt-1">{m.reason}</div>
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {m.matched_terms.slice(0, 6).map((t, i) => (
-                            <span key={i} className="kbd">{t}</span>
-                          ))}
+                        <div className="flex items-baseline gap-2">
+                          <span className="font-display text-[18px] text-[var(--ink)] leading-tight">{r.subject}</span>
+                          <span className="kicker">Art. {r.article}</span>
+                        </div>
+                        <div className="text-[11.5px] text-[var(--ink-dim)] mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                          {r.requester_email && <span className="code">{r.requester_email}</span>}
+                          <span>via {r.source}</span>
+                          <span>{new Date(r.created_at).toLocaleString()}</span>
+                          {r.status === "executed" && (
+                            <span className="text-[var(--sage)]">
+                              {r.files_processed} files · {r.findings_erased} findings erased
+                            </span>
+                          )}
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <span
-                          className={`pill ${
-                            m.proposed_action === "delete"
-                              ? "pill-high"
-                              : m.proposed_action === "anonymize"
-                                ? "pill-medium"
-                                : "pill-low"
-                          }`}
-                        >
-                          {m.proposed_action}
-                        </span>
-                        <span className="text-[10px] font-mono text-[var(--fg-dim)]">
-                          conf {(m.confidence * 100).toFixed(0)}%
-                        </span>
+                      <div className="shrink-0">
+                        <span className={`pill ${STATUS_PILL[r.status]}`}>{r.status}</span>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </div>
