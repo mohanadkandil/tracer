@@ -141,6 +141,11 @@ LINKABLE_LABELS = PERSON_LABELS | ID_LABELS
 EMBEDDING_CONTEXT_CHARS = 120
 SIMILARITY_THRESHOLD = 0.85
 
+# Max character distance between an identifier and the PERSON it links to.
+# Prevents the bug where, when a doc has only one detected PERSON, every
+# identifier in the doc attaches to them even when far away in text.
+MAX_LINK_DISTANCE_CHARS = 220
+
 
 # ---------- L2: canonicalization ----------
 
@@ -316,24 +321,30 @@ def _context_window(text: str, span: Span) -> str:
 
 
 def _closest_person(ident: Span, people: list[Span]) -> Span | None:
-    """Return the PERSON span whose center is closest to this identifier's center.
+    """Return the PERSON span whose center is closest to this identifier's center,
+    only if within MAX_LINK_DISTANCE_CHARS.
 
     Ties broken by 'person comes before identifier' (typical doc shape:
     'Mitarbeiter: Hans Müller (E-43217)' — name first, ID after).
+
+    Returns None if no PERSON is within the link distance — caller treats the
+    identifier as orphan, preventing pollution when the doc has a misclassified
+    or undetected co-occurring person.
     """
     if not people:
         return None
     ident_center = (ident.start + ident.end) / 2
-    best: tuple[float, int, Span] | None = None  # (distance, tie_break, span)
+    best: tuple[float, int, Span] | None = None
     for p in people:
         p_center = (p.start + p.end) / 2
         distance = abs(ident_center - p_center)
-        # Prefer person that appears BEFORE the identifier on tie
         tie = 0 if p.end <= ident.start else 1
         key = (distance, tie)
         if best is None or key < (best[0], best[1]):
             best = (distance, tie, p)
-    return best[2] if best else None
+    if best is None or best[0] > MAX_LINK_DISTANCE_CHARS:
+        return None
+    return best[2]
 
 
 # ---------- L3: embeddings ----------
