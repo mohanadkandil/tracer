@@ -50,6 +50,39 @@ CREATE INDEX IF NOT EXISTS idx_findings_file ON findings(file_id);
 CREATE INDEX IF NOT EXISTS idx_findings_owner ON findings(owner);
 CREATE INDEX IF NOT EXISTS idx_findings_label ON findings(label);
 
+CREATE TABLE IF NOT EXISTS dsar_requests (
+    id              TEXT PRIMARY KEY,
+    subject         TEXT NOT NULL,
+    requester_email TEXT,
+    article         TEXT NOT NULL DEFAULT '17',
+    source          TEXT NOT NULL,         -- 'web' | 'api' | 'slack' | 'email' | 'webhook'
+    raw_email       TEXT,                  -- original message body
+    identifiers_json TEXT NOT NULL,        -- parsed identifier list
+    status          TEXT NOT NULL DEFAULT 'pending', -- pending | approved | declined | executed
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    decided_at      TIMESTAMP,
+    decided_by      TEXT,
+    decision_note   TEXT,
+    files_processed INTEGER DEFAULT 0,
+    findings_erased INTEGER DEFAULT 0,
+    cert_pdf_path   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dsar_status ON dsar_requests(status);
+CREATE INDEX IF NOT EXISTS idx_dsar_subject ON dsar_requests(subject);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind            TEXT NOT NULL,         -- 'dsar_new' | 'dsar_executed' | 'system'
+    title           TEXT NOT NULL,
+    body            TEXT,
+    target_url      TEXT,
+    request_id      TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    seen            INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_notif_seen ON notifications(seen);
+CREATE INDEX IF NOT EXISTS idx_notif_created ON notifications(created_at);
+
 CREATE TABLE IF NOT EXISTS entity_links (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     canonical       TEXT NOT NULL,       -- canonical key (e.g. "mueller-hans")

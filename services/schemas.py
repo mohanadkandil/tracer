@@ -93,3 +93,49 @@ class DSARPlan(BaseModel):
     matches: list[DSARMatch]
     summary: str
     risk_notes: list[str] = Field(default_factory=list)
+
+
+# ===== DSAR Request (intake → review → execute lifecycle) =====
+
+
+class DSARIntakeRequest(BaseModel):
+    """Trigger payload — accepts free-form email body OR structured fields."""
+    body: str | None = None  # raw email / message text
+    subject: str | None = None  # if known; else extracted from body
+    requester_email: str | None = None
+    article: Literal["17", "5", "32"] = "17"
+    source: Literal["web", "api", "slack", "email", "webhook"] = "api"
+
+
+class DSARRequestRecord(BaseModel):
+    id: str
+    subject: str
+    requester_email: str | None
+    article: str
+    source: str
+    status: Literal["pending", "approved", "declined", "executed"]
+    identifiers: list[str]
+    created_at: str
+    decided_at: str | None = None
+    decided_by: str | None = None
+    decision_note: str | None = None
+    files_processed: int = 0
+    findings_erased: int = 0
+    cert_pdf_path: str | None = None
+
+
+class DSARDecision(BaseModel):
+    decision: Literal["approve", "decline"]
+    note: str | None = None
+    decided_by: str | None = None
+
+
+class Notification(BaseModel):
+    id: int
+    kind: Literal["dsar_new", "dsar_executed", "system"]
+    title: str
+    body: str | None = None
+    target_url: str | None = None
+    request_id: str | None = None
+    created_at: str
+    seen: bool = False
